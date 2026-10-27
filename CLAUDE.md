@@ -74,7 +74,7 @@ Claude Code 메인 세션(리드)이 서브에이전트 `qa`, `ios-dev`를 불�
 |---|---|
 | `LyricsActivityAttributes.swift` | 앱 ↔ 위젯 데이터 계약(`ContentState`). 바꾸면 양쪽 모두 영향 |
 | `LiveLyricsExperiment/Info.plist`, `LyricsWidget/Info.plist`, `LiveLyricsExperiment.xcodeproj` | 권한, Background Modes, 타깃·빌드 설정 |
-| `docs/plan/**` | 지시서, roadmap, decisions, constraints, 플랜 모드 계획(`plans/`) |
+| `docs/plan/**` | 지시서, roadmap, decisions, constraints, 플랜 모드 계획 |
 
 다른 역할은 계약을 읽기만 한다. 바꿔야 하면 근거(파일:줄)와 함께 리드에게 보고한다.
 
@@ -143,7 +143,7 @@ Claude Code 메인 세션(리드)이 서브에이전트 `qa`, `ios-dev`를 불�
 
 ## 📝 문서 관리
 - `docs/plan/` : 리드가 작성·수정 (지시서, roadmap, decisions, constraints). 지시서 상태 줄은 리드만 바꾼다
-- `docs/plan/plans/` : 플랜 모드 계획 파일 (`.claude/settings.json`의 `plansDirectory`). `~/.claude/plans/`에 쓰지 않는다
+- 플랜 모드 계획도 `docs/plan/`에 둔다 (`.claude/settings.json`의 `plansDirectory`). `~/.claude/plans/`에 쓰지 않는다
 - `docs/dev/` : `ios-dev`가 작성·수정 (architecture, xcode-setup, reports/)
 - `docs/dev/archive/` : 이전 구조(Claude 앱 → Xcode Agent) 시절 기록. 더는 갱신하지 않는다
 - `CLAUDE.md` : 리드만 수정
