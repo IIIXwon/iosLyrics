@@ -40,7 +40,7 @@ Spotify에서 재생 중인 곡의 **싱크 가사를 아이폰 잠금화면(Liv
 
 - **`LocationKeepAlive`**: 앱이 잠금 상태에서도 카드를 갱신하려면 백그라운드에 살아 있어야 하는데, 실험상 **위치 추적만 통과**했다. 제거·대체 금지
 - **`ExperimentController`**: 카드 갱신의 **유일한 창구**. `Activity.update`는 여기서만, 바뀐 게 있을 때만 호출
-- **`NowPlayingService`**: 폴링 사이의 위치를 추정해 `trackStart`만 넘긴다. 카드의 시간·진행바는 iOS가 `timerInterval`로 스스로 흘린다 → 매초 갱신하지 말 것
+- **`NowPlayingService`**: 폴링 사이의 위치를 추정한다. 카드에는 가사 줄만 표시(시간·진행바 없음, 013) → 가사 줄이 바뀔 때만 갱신, 매초 갱신하지 말 것
 - **`LyricsActivityAttributes`**: 필드를 바꾸면 앱·위젯 **양쪽**이 영향받음. 반드시 둘 다 같이 수정
 - **잠금화면 카드 중심**: 다이내믹 아일랜드는 Spotify 표시가 우선이라 거의 안 보임
 

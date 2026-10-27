@@ -23,7 +23,10 @@ final class ExperimentController: ObservableObject {
         didSet {
             UserDefaults.standard.set(syncOffset, forKey: "syncOffset")
             guard syncOffset != oldValue, isRunning, let np = nowPlaying.current else { return }
-            sendCard(makeState(np), key: np.key, reason: String(format: "싱크 보정 %+.2f초", syncOffset))
+            let state = makeState(np)
+            if let reason = updateReason(new: state, key: np.key) {
+                sendCard(state, key: np.key, reason: "\(reason) (싱크 보정 \(String(format: "%+.2f", syncOffset))초)")
+            }
         }
     }
 
@@ -324,7 +327,7 @@ final class ExperimentController: ObservableObject {
         if let reason = updateReason(new: state, key: np?.key) {
             sendCard(state, key: np?.key, reason: reason)
         } else {
-            skippedUpdates += 1   // 바뀐 게 없으면 카드를 건드리지 않음 (시계는 iOS가 알아서 흐름)
+            skippedUpdates += 1   // 바뀐 게 없으면 카드를 건드리지 않음
         }
         scheduleNextLine()
     }
@@ -876,7 +879,7 @@ final class ExperimentController: ObservableObject {
             try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
             guard !Task.isCancelled, let np = nowPlaying.current else { return }
             let state = makeState(np)
-            if state.current != lastSent?.current {
+            if lastSent.map({ linesChanged($0, state) }) ?? true {
                 sendCard(state, key: np.key, reason: "가사 줄 변경")
             }
             scheduleNextLine()
@@ -896,11 +899,16 @@ final class ExperimentController: ObservableObject {
         return Task { await activity.update(ActivityContent(state: state, staleDate: nil)) }
     }
 
+    /// 이전·현재·다음 줄 중 하나라도 달라졌는지 (같은 줄이 반복돼도 이전·다음 줄이 바뀌면 갱신)
+    private func linesChanged(_ old: LyricsActivityAttributes.ContentState, _ new: LyricsActivityAttributes.ContentState) -> Bool {
+        old.previous != new.previous || old.current != new.current || old.next != new.next
+    }
+
     /// 카드를 갱신해야 하는 이유. 필요 없으면 nil
     private func updateReason(new: LyricsActivityAttributes.ContentState, key: String?) -> String? {
         guard let old = lastSent else { return "처음" }
         if key != lastSentKey { return "곡 변경" }
-        if old.current != new.current { return "표시 내용 변경" }
+        if linesChanged(old, new) { return "표시 내용 변경" }
         if old.isPlaying != new.isPlaying { return new.isPlaying ? "재생" : "일시정지" }
         // 카드에 시간·진행 막대가 없으므로 시간 보정·일시정지 위치 이동은 보이지 않는 변화 → 갱신하지 않음 (작업 013)
         return nil

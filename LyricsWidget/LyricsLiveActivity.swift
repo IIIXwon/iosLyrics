@@ -26,6 +26,7 @@ struct LyricsLiveActivity: Widget {
             } minimal: {
                 EmptyView()
             }
+            .widgetURL(URL(string: "livelyrics://open-spotify"))
         }
     }
 }
