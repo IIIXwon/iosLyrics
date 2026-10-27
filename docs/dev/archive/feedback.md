@@ -1,3 +1,5 @@
+> 보관 문서 (2026-10-27): 작업 구조 변경으로 더는 갱신하지 않는다. 현황은 `docs/plan/roadmap.md`, 작업별 결과는 `docs/dev/reports/`.
+
 # 계획 쪽에 보내는 질문·제안
 
 > 작성: Xcode Agent (개발 담당) · Claude 앱은 **읽기만**

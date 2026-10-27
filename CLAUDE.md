@@ -54,12 +54,56 @@ Spotify에서 재생 중인 곡의 **싱크 가사를 아이폰 잠금화면(Liv
 
 ## HOW — 작업 방식
 
-- **컴파일 확인은 Claude가 Xcode 도구(`BuildProject`)로 직접** 한다. 코드를 바꿨으면 빌드해서 오류 없음을 확인한 뒤 보고
-- **아이폰 실행·동작 테스트는 사용자가** (시뮬레이터 X, 자동 테스트 없음). 빌드 통과 ≠ 동작 확인이므로, 실기기에서 볼 항목을 알려 준다
-- 아래 코딩 규칙은 자주 났던 오류를 미리 막기 위한 것
+Claude Code 메인 세션(리드)이 서브에이전트 `qa`, `ios-dev`를 불러 작업한다. 흐름은 `/task N` → 사용자 아이폰 확인 → `/judge N` (아래 "🔁 작업 흐름").
+
+### 역할
+| 에이전트 | 하는 일 | 수정 범위 |
+|---|---|---|
+| 리드(메인 세션) | 지시서 작성, 거절 판정, `/code-review` 실행, 최종 테스트·빌드, git/PR, Xcode 클릭 경로 안내 | 계약(아래), `docs/plan/**`, `.claude/**`, `scripts/**` |
+| `qa` | 테스트 모드: 지시서의 Red 목록만큼 단위 테스트 작성·실행, 실패를 피드백으로 정리 / 로그 모드: 아이폰 로그를 확인 항목과 대조해 판정 근거 | `LiveLyricsTests/**` |
+| `ios-dev` | 지시서대로 개발·빌드, 피드백을 수용하거나 근거를 붙여 거절, 보고서 작성 | `LiveLyricsExperiment/**`, `Spotify/**`, `LyricsWidget/**`(Info.plist 제외), `docs/dev/**` |
+
+- 서브에이전트끼리는 직접 대화하지 않는다. QA 피드백 → 리드 → 개발, 개발의 거절 → **리드가 지시서 기준으로 판정**
+- 개발은 테스트를 수정·삭제·비활성화하지 않는다. 서브에이전트는 git을 다루지 않는다
+- 서브에이전트는 파일을 Edit/Write로만 쓴다 (Bash heredoc 금지)
+- 지시서와 다르게 해야 하면 임의로 정하지 말고 보고서 "남은 이슈·질문"에 남기고 멈춘다
+- 보고 형식: `## 변경 파일` / `## 검증(명령과 결과)` / `## 남은 이슈·질문` (에이전트별 세부 형식은 `.claude/agents/`)
+
+### 계약 (리드만 수정)
+| 파일 | 역할 |
+|---|---|
+| `LyricsActivityAttributes.swift` | 앱 ↔ 위젯 데이터 계약(`ContentState`). 바꾸면 양쪽 모두 영향 |
+| `LiveLyricsExperiment/Info.plist`, `LyricsWidget/Info.plist`, `LiveLyricsExperiment.xcodeproj` | 권한, Background Modes, 타깃·빌드 설정 |
+| `docs/plan/**` | 지시서, roadmap, decisions, constraints |
+
+다른 역할은 계약을 읽기만 한다. 바꿔야 하면 근거(파일:줄)와 함께 리드에게 보고한다.
+
+### 명령
+| 목적 | 명령 |
+|---|---|
+| 빌드(컴파일 확인) | `xcodebuild -project LiveLyricsExperiment.xcodeproj -scheme LiveLyricsExperiment -destination 'generic/platform=iOS' -quiet build` (서명 오류면 끝에 `CODE_SIGNING_ALLOWED=NO`) |
+| 단위 테스트 | `xcodebuild -project LiveLyricsExperiment.xcodeproj -scheme LiveLyricsExperiment -destination 'platform=iOS Simulator,name=<기기 이름>' -quiet test` |
+| 시뮬레이터 이름 확인 | `xcrun simctl list devices available` |
+| 규칙·Client ID 점검 | `scripts/check.sh` |
+
+> 테스트 타깃 `LiveLyricsTests` 추가 후 첫 `/task`에서 리드가 두 명령을 실제로 돌려 보고 이 표를 확정한다 (시뮬레이터 기기 이름, 위젯 확장까지 함께 빌드되는지).
+
+- **아이폰 실행·동작 확인은 사용자가** 실기기에서 한다. 테스트 통과 ≠ 동작 확인이므로 실기기에서 볼 항목을 알려 준다
 - 결과 확인: 사용자가 앱의 [전체 복사] 로그를 붙여 줌. 잠금 상태 확인은 Mac 콘솔 앱에서 `liveactivitiesd` 로그
 - 배터리 측정은 충전기를 뺀 상태에서
-- 작업을 마치면 `docs/dev/progress.md`의 체크리스트·테스트 결과를 갱신
+
+### 테스트 규칙
+- 단위 테스트(Swift Testing, 타깃 `LiveLyricsTests`)는 **순수 로직만**: LRC 파싱, 현재 줄 계산, 제목 정리·연주곡 제목 판단, 재검색 간격, 호출 수·한도 판단, 권한 판단 등
+- 기기 동작(잠금화면 카드, 백그라운드 유지, 카드 ▶︎·탭, 실제 Spotify 응답)은 **아이폰 확인**으로 본다. UI 테스트(XCUITest)는 쓰지 않는다
+- 이름은 한글 `행동_조건_결과`, 본문은 `// given // when // then`. 실제 네트워크·위치·키체인·UserDefaults 값은 쓰지 않는다
+- Red: 기존 함수는 assertion 실패여야 한다. 새 함수는 지시서에 시그니처가 있을 때만 "없는 이름" 컴파일 에러를 Red로 인정한다
+
+### Git
+- `main`은 PR + squash merge로만 바꾼다. main 직접 push는 hook으로 차단한다
+- 브랜치 `task/<번호>-<이름>`. 커밋 메시지는 Conventional Commits (`docs(plan): 011 지시서`, `test(lyrics): ... (Red)`, `feat(lyrics): ...`, `fix(lyrics): 리뷰 반영`)
+- push, PR 생성, merge 전에는 사용자 확인을 받는다. git은 리드만 다룬다
+- `git add`는 파일 이름으로만 한다(`-A`, `.`, `commit -a` 금지). 커밋 전에 `scripts/check.sh`
+- ⚠️ **Spotify Client ID는 외부 노출 금지, 로컬에서만 사용**: `Spotify/SpotifyConfig.swift`의 Client ID 변경과 `Spotify/SpotifySecrets.swift`는 커밋·PR·보고서·로그 인용에 넣지 않는다
 
 ### 코딩 규칙 / 자주 난 오류
 - 클래스는 `@MainActor`, 델리게이트 메서드는 `nonisolated` + `Task { @MainActor in ... }`
@@ -87,20 +131,18 @@ Spotify에서 재생 중인 곡의 **싱크 가사를 아이폰 잠금화면(Liv
 | 다음 할 일, 우선순위, 결정 이유 | `docs/plan/roadmap.md`, `docs/plan/decisions.md` |
 | 데이터 흐름, 카드 갱신 조건, `ContentState`, 가사 로직 | `docs/dev/architecture.md` |
 | Info.plist, Background Modes, Deployment Target, Spotify 대시보드 | `docs/dev/xcode-setup.md` |
-| 이전 작업·테스트 수치 | `docs/dev/progress.md` |
+| 이전 작업·테스트 결과 | `docs/dev/reports/`, `docs/plan/roadmap.md` (2026-10 이전 기록은 `docs/dev/archive/`) |
 
-## 🔁 작업 흐름 (지시서 → 보고서)
-사용자가 **"다음 작업 진행해"**라고 하면:
-1. `docs/plan/tasks/`에서 상태가 `대기` 또는 `수정 요청`인 지시서 중 **번호가 가장 작은 것**을 연다 (`README.md` 제외)
-2. 지시서대로 작업하고 BuildProject로 빌드 확인. `수정 요청`이면 지시서 맨 아래 "검토 N차" 내용만 반영
-3. `docs/dev/reports/NNN-report.md`에 보고서 작성 (같은 번호, 상태: `검토 요청`). 형식은 `docs/plan/tasks/README.md` 참고
-4. 지시서와 다르게 해야 하면 임의로 정하지 말고 보고서의 "질문"에 남기고 멈춘다
-5. 사용자에게 보고서 요약과 **아이폰에서 확인할 항목**을 알려 준다
-- 처리할 지시서가 없으면 "대기 중인 지시서가 없어요"라고 답한다
-- 지시서의 상태 줄은 Agent가 바꾸지 않는다 (Claude 앱이 검토 후 변경)
+## 🔁 작업 흐름
+- **`/task N`**: ① 리드 지시서·브랜치 → ② `qa` 테스트 작성(Red) → ③ `ios-dev` 개발 → ④ `qa` 테스트 실행 → ⑤ 리드 확인 + `/code-review` → ⑥ 아이폰 확인 항목을 알려 주고 멈춤
+  - ④ 실패·⑤ 지적 → `ios-dev`가 항목마다 수용(수정 후 ④) 또는 거절(리드 판정: 테스트 틀림 → `qa` / 지시서 모호 → 리드 / 개발 틀림 → `ios-dev`)
+  - Red 목록이 "없음"이면 ②④를 건너뛴다. 피드백 루프가 3번을 넘으면 사용자에게 묻는다
+- **`/judge N`**: 사용자가 붙인 로그 → `qa` 로그 모드로 근거 정리 → 리드 판정 → 통과(지시서 `완료`, roadmap·decisions 갱신, PR) 또는 "검토 N차 — 수정 요청" → `/task N`
+- 세부 단계: `.claude/skills/task/SKILL.md`, `.claude/skills/judge/SKILL.md`
+- 지시서·보고서 형식: `docs/plan/tasks/README.md`
 
-## 📝 문서 권한
-- `docs/dev/` : Agent가 작성·수정 (architecture, xcode-setup, progress, feedback, reports/)
-- `docs/plan/` : 계획 담당(Claude 앱) 문서. **읽기만, 수정 금지**
-- `CLAUDE.md` : 수정 금지. 바꿀 게 있으면 `docs/dev/feedback.md`에 제안
-- 계획과 다르게 해야 하면 임의로 바꾸지 말고 `feedback.md`에 남길 것
+## 📝 문서 관리
+- `docs/plan/` : 리드가 작성·수정 (지시서, roadmap, decisions, constraints). 지시서 상태 줄은 리드만 바꾼다
+- `docs/dev/` : `ios-dev`가 작성·수정 (architecture, xcode-setup, reports/)
+- `docs/dev/archive/` : 이전 구조(Claude 앱 → Xcode Agent) 시절 기록. 더는 갱신하지 않는다
+- `CLAUDE.md` : 리드만 수정

@@ -1,3 +1,5 @@
+> 보관 문서 (2026-10-27): 작업 구조 변경으로 더는 갱신하지 않는다. 현황은 `docs/plan/roadmap.md`, 작업별 결과는 `docs/dev/reports/`.
+
 # 개발 진행 기록 (dev_progress)
 
 Live Lyrics — Spotify에서 재생 중인 곡의 싱크 가사를 아이폰 잠금화면(Live Activity)에 표시하는 개인용 앱.
