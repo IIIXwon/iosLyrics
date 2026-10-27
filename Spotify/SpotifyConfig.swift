@@ -2,8 +2,8 @@
 import Foundation
 
 enum SpotifyConfig {
-    /// ⚠️ Spotify 개발자 대시보드 → 내 앱 → Settings에서 Client ID를 복사해 붙여 넣으세요
-    static let clientID = "내 ClientID"
+    /// Client ID는 `SpotifySecrets.swift`에 있어요 (예시: `SpotifySecrets.swift.example`)
+    static let clientID = SpotifySecrets.clientID
 
     /// 대시보드의 Redirect URIs에 이 값을 "정확히 똑같이" 등록해야 해요
     static let redirectURI = "livelyrics://callback"
