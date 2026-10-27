@@ -1,7 +1,7 @@
 ---
 name: task
 description: iosLyrics 작업 N을 지시서 → 테스트 작성(Red) → 개발 → 테스트 통과 → 코드 리뷰 → 피드백 수정 → 아이폰 확인 요청 순서로 진행한다. 사용자가 /task N을 입력했을 때만 사용한다.
-argument-hint: <작업 번호>
+argument-hint: <작업 번호> [하고 싶은 내용]
 disable-model-invocation: true
 ---
 # /task $ARGUMENTS
@@ -10,7 +10,9 @@ disable-model-invocation: true
 
 ## ① 지시서와 브랜치
 - `docs/plan/tasks/`에서 번호 $ARGUMENTS의 지시서를 찾는다.
-  - 없음 → `docs/plan/roadmap.md`·`decisions.md`를 기준으로 초안을 쓰고 **사용자 승인**을 받는다 (상태: `대기`).
+  - 없음 → **plan mode로 들어가(`EnterPlanMode`) 초안부터 쓴다.** 목적은 번호 뒤에 적은 내용이나 대화의 사용자 요청. 요청이 없으면 무엇을 할지 묻는다.
+    - plan 단계에서는 관련 코드와 `docs/plan/roadmap.md`·`decisions.md`·`constraints.md`(하지 않음·금지 목록)를 읽기만 하고, 아래 지시서 구성대로 계획 파일에 쓴다.
+    - 사용자가 plan을 승인하면 그 내용을 `docs/plan/tasks/NNN-제목.md`(상태: `대기`)로 저장하고 브랜치·커밋 후 ②로.
   - `대기` → 그대로 시작.
   - `수정 요청` → 맨 아래 "검토 N차"만 반영한다. 테스트로 확인할 게 늘었으면 Red 목록에 추가하고 ②부터, 아니면 ③부터.
 - 구성은 `docs/plan/tasks/README.md`를 따른다. 특히 **Red 목록**(테스트로 확인할 동작을 `입력 → 기대값`으로, 없으면 "없음"), **새 함수 시그니처**, **하지 말 것**, **사용자가 아이폰에서 확인할 것**을 채운다.
