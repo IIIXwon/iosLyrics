@@ -44,3 +44,4 @@
 | 2026-10-27 | **작업 구조 변경**: Claude Code 리드 + 서브에이전트 `qa`·`ios-dev`. 흐름 `/task N` → 아이폰 확인 → `/judge N`. 테스트 먼저(Swift Testing, 순수 로직만), 개발은 피드백을 수용 또는 근거 붙여 거절 → 리드 판정, 리뷰는 `/code-review`, git은 작업마다 브랜치 + PR(squash) | 두 도구 사이 사용자 중계 제거, 금지 사항 회귀를 테스트·리뷰·`scripts/check.sh`로 확인. UI 테스트는 잠금화면·백그라운드를 다룰 수 없어 쓰지 않음. 사용자 결정 | `task/000-agent-structure` |
 | 2026-10-27 | **Spotify Client ID는 외부 노출 금지, 로컬에서만 사용** — git·PR·보고서에 넣지 않음. `SpotifySecrets.swift`(gitignore)로 분리는 작업 011 | 사용자 결정 | |
 | 2026-10-27 | Client ID는 **`Spotify/SpotifySecrets.swift`(gitignore, 앱 타깃만)**, 저장소에는 `SpotifySecrets.swift.example`만. 새로 받은 폴더는 예시를 복사해 값을 넣어야 빌드됨 | git·PR 노출 방지, `SpotifyConfig.swift`를 커밋 가능한 상태로 유지. 이 파일은 Claude가 읽지 않음(권한 규칙) → 사용자가 직접 관리 | 011 |
+| 2026-10-27 | LRCLIB 조회는 **일시 오류(5xx·429·네트워크)만 재시도** — 2·5·15·30·60초, 최대 6번. 그 밖의 오류는 바로 멈춤 | 503 한 번에 곡 전체가 "가사 없음"이 되는 문제(011 로그) | 012 |
