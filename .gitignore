@@ -1,0 +1,8 @@
+# macOS
+.DS_Store
+
+# Xcode 사용자별 설정·빌드 결과
+xcuserdata/
+DerivedData/
+build/
+*.ipa
