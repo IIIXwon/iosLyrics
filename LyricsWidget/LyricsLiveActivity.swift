@@ -11,6 +11,8 @@ struct LyricsLiveActivity: Widget {
             LockScreenLyricsView(state: context.state)
                 .activityBackgroundTint(Color.black.opacity(0.35))
                 .activitySystemActionForegroundColor(.white)
+                // 카드를 누르면 앱이 이 주소를 받아 Spotify 앱을 열어요 (작업 009). ▶︎ 버튼 영역은 버튼(인텐트)이 우선
+                .widgetURL(URL(string: "livelyrics://open-spotify"))
 
         } dynamicIsland: { context in
             DynamicIsland {

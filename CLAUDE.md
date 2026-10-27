@@ -25,7 +25,7 @@ Spotify에서 재생 중인 곡의 **싱크 가사를 아이폰 잠금화면(Liv
 | `Spotify/SpotifyConfig.swift` | Client ID, Redirect URI `livelyrics://callback`, scopes |
 | `Spotify/SpotifyAuth.swift` | PKCE 로그인, 토큰 갱신, 키체인(`AfterFirstUnlock`) 저장 |
 | `Spotify/SpotifyAPI.swift` | currently-playing 조회, 401 재시도, 429 Retry-After |
-| `Spotify/NowPlayingService.swift` | 1초 폴링, 곡 변경·일시정지·seek 감지, 위치 추정 |
+| `Spotify/NowPlayingService.swift` | 폴링(재생 중 3초·일시정지 15초·곡 없음 10초), 곡 변경·일시정지·seek 감지, 위치 추정 |
 
 **위젯 확장 타깃 `LyricsWidgetExtension`**
 | 파일 | 하는 일 |

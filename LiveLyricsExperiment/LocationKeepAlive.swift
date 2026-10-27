@@ -79,10 +79,7 @@ final class LocationKeepAlive: NSObject {
     }
  
     fileprivate func received() {
-        receivedCount += 1
-        if receivedCount == 1 || receivedCount % 20 == 0 {
-            onLog?("📍 위치 수신 #\(receivedCount)")
-        }
+        receivedCount += 1   // 수신 로그는 남기지 않음 (시작·정지·실패 로그로 충분, 작업 010)
     }
  
     fileprivate func statusText(_ status: CLAuthorizationStatus) -> String {

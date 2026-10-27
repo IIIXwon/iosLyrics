@@ -43,7 +43,13 @@ final class SpotifyAuth: ObservableObject {
     init() {
         refreshToken = Keychain.read(Self.refreshTokenKey)
         isLoggedIn = refreshToken != nil
-        needsRelogin = isLoggedIn && UserDefaults.standard.string(forKey: Self.grantedScopesKey) != Self.currentScopes
+        needsRelogin = isLoggedIn && !Self.hasRequiredScopes
+    }
+
+    /// 로그인했을 때 받은 권한에 지금 필요한 권한이 모두 들어 있는지 (권한이 줄어든 경우엔 다시 로그인하지 않아도 됨, 작업 010)
+    private static var hasRequiredScopes: Bool {
+        let granted = Set((UserDefaults.standard.string(forKey: grantedScopesKey) ?? "").split(separator: " ").map(String.init))
+        return Set(SpotifyConfig.scopes).isSubset(of: granted)
     }
 
     // MARK: - 로그인
