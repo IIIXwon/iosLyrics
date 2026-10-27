@@ -10,10 +10,10 @@ nonisolated struct LyricsActivityAttributes: ActivityAttributes {
         var current: String        // 가운데 큰 줄
         var next: String           // 아래 작은 줄
 
-        // ── 3단계: 가사가 있을 때 곡 정보를 따로 보여 줌 ──
+        // ── 3단계: 곡 정보 (013부터 카드에 표시하지 않음, 형식 유지용) ──
         var trackInfo: String = ""   // "제목 · 아티스트" (비어 있으면 안 보임)
 
-        // ── 개선 1: 재생 시간 (iOS가 스스로 흘려 보내는 시계) ──
+        // ── 개선 1: 재생 시간 (013부터 카드에 표시하지 않음, 형식 유지용) ──
         var isPlaying: Bool = false
         /// 곡의 0초 지점에 해당하는 시각 (= 지금 - 재생 위치)
         var trackStart: Date? = nil
