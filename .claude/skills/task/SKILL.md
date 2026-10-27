@@ -10,7 +10,7 @@ disable-model-invocation: true
 
 ## ① 지시서와 브랜치
 - `docs/plan/tasks/`에서 번호 $ARGUMENTS의 지시서를 찾는다.
-  - 없음 → **plan mode로 들어가(`EnterPlanMode`) 초안부터 쓴다.** 목적은 번호 뒤에 적은 내용이나 대화의 사용자 요청. 요청이 없으면 무엇을 할지 묻는다.
+  - 없음 → **plan mode로 들어가(`EnterPlanMode`) 초안부터 쓴다.** 목적은 번호 뒤에 적은 내용 → 없으면 `docs/plan/roadmap.md` "예정"에 있는 그 번호의 제목 → 그것도 없으면 대화의 사용자 요청. 아무것도 없으면 무엇을 할지 묻는다.
     - plan 단계에서는 관련 코드와 `docs/plan/roadmap.md`·`decisions.md`·`constraints.md`(하지 않음·금지 목록)를 읽기만 하고, 아래 지시서 구성대로 계획 파일에 쓴다.
     - 사용자가 plan을 승인하면 그 내용을 `docs/plan/tasks/NNN-제목.md`(상태: `대기`)로 저장하고 브랜치를 만든 뒤 ②로. (`docs/`는 git에 올리지 않으므로 커밋하지 않는다)
   - `대기` → 그대로 시작.
@@ -18,6 +18,7 @@ disable-model-invocation: true
 - 구성은 `docs/plan/tasks/README.md`를 따른다. 특히 **Red 목록**(테스트로 확인할 동작을 `입력 → 기대값`으로, 없으면 "없음"), **새 함수 시그니처**, **하지 말 것**, **사용자가 아이폰에서 확인할 것**을 채운다.
 - 백그라운드 유지·갱신 방식을 건드리면 `docs/plan/constraints.md`를 먼저 확인한다. 거기서 막힌 방법은 지시서에 넣지 않는다.
 - 브랜치: `git switch main && git pull && git switch -c task/<번호>-<이름>` (이미 있으면 `git switch`로 이어서 쓴다).
+- roadmap: 그 번호를 `docs/plan/roadmap.md`의 "예정"에서 "진행 중"으로 옮긴다. roadmap에 없는 번호면 "진행 중"에 `| 번호 | 제목 |`으로 추가한다.
 - `docs/`는 .gitignore 대상이라 지시서는 커밋하지 않는다.
 
 ## ② 테스트 작성 (Red 목록이 "없음"이면 건너뜀)
