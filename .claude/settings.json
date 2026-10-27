@@ -30,5 +30,6 @@
         ]
       }
     ]
-  }
+  },
+  "plansDirectory": "docs/plan/plans"
 }
