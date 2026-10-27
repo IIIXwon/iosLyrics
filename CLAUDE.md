@@ -82,11 +82,11 @@ Claude Code 메인 세션(리드)이 서브에이전트 `qa`, `ios-dev`를 불�
 | 목적 | 명령 |
 |---|---|
 | 빌드(컴파일 확인) | `xcodebuild -project LiveLyricsExperiment.xcodeproj -scheme LiveLyricsExperiment -destination 'generic/platform=iOS' -quiet build` (서명 오류면 끝에 `CODE_SIGNING_ALLOWED=NO`) |
-| 단위 테스트 | `xcodebuild -project LiveLyricsExperiment.xcodeproj -scheme LiveLyricsExperiment -destination 'platform=iOS Simulator,name=iPhone 18' -quiet test` |
+| 단위 테스트 | `xcodebuild -project LiveLyricsExperiment.xcodeproj -scheme LiveLyricsExperiment -destination 'platform=iOS Simulator,name=iPhone 18 Pro' -quiet test` |
 | 시뮬레이터 이름 확인 | `xcrun simctl list devices available` |
 | 규칙·Client ID 점검 | `scripts/check.sh` |
 
-> 테스트 타깃 `LiveLyricsTests` 추가 후 첫 `/task`에서 리드가 두 명령을 실제로 돌려 보고 이 표를 확정한다 (시뮬레이터 기기 이름, 위젯 확장까지 함께 빌드되는지).
+> 확정 (2026-10-27, 011): 시뮬레이터는 `iPhone 18 Pro` (`iPhone 18`은 없음). 빌드 명령은 앱 스킴이라 위젯 확장도 함께 빌드된다.
 
 - **아이폰 실행·동작 확인은 사용자가** 실기기에서 한다. 테스트 통과 ≠ 동작 확인이므로 실기기에서 볼 항목을 알려 준다
 - 결과 확인: 사용자가 앱의 [전체 복사] 로그를 붙여 줌. 잠금 상태 확인은 Mac 콘솔 앱에서 `liveactivitiesd` 로그
