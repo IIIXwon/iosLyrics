@@ -16,6 +16,7 @@
 		309A07C5308EDC3200852D61 /* SpotifyAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 309A07C1308EDC3200852D61 /* SpotifyAuth.swift */; };
 		309A07C6308EDC3200852D61 /* SpotifyAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 309A07C0308EDC3200852D61 /* SpotifyAPI.swift */; };
 		309A07C7308EDC3200852D61 /* NowPlayingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 309A07BF308EDC3200852D61 /* NowPlayingService.swift */; };
+		309A07C9308EDC3200852D61 /* SpotifySecrets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 309A07C8308EDC3200852D61 /* SpotifySecrets.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -58,6 +59,7 @@
 		309A07C0308EDC3200852D61 /* SpotifyAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyAPI.swift; sourceTree = "<group>"; };
 		309A07C1308EDC3200852D61 /* SpotifyAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyAuth.swift; sourceTree = "<group>"; };
 		309A07C2308EDC3200852D61 /* SpotifyConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyConfig.swift; sourceTree = "<group>"; };
+		309A07C8308EDC3200852D61 /* SpotifySecrets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifySecrets.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -161,6 +163,7 @@
 				309A07C0308EDC3200852D61 /* SpotifyAPI.swift */,
 				309A07C1308EDC3200852D61 /* SpotifyAuth.swift */,
 				309A07C2308EDC3200852D61 /* SpotifyConfig.swift */,
+				309A07C8308EDC3200852D61 /* SpotifySecrets.swift */,
 			);
 			path = Spotify;
 			sourceTree = "<group>";
@@ -304,6 +307,7 @@
 				309A07C5308EDC3200852D61 /* SpotifyAuth.swift in Sources */,
 				309A07C6308EDC3200852D61 /* SpotifyAPI.swift in Sources */,
 				309A07C7308EDC3200852D61 /* NowPlayingService.swift in Sources */,
+				309A07C9308EDC3200852D61 /* SpotifySecrets.swift in Sources */,
 			);
 		};
 		309A0776308E5F3C00852D61 /* Sources */ = {
