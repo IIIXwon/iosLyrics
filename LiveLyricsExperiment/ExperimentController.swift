@@ -1,12 +1,11 @@
 // 앱 타깃 — 전체 조율: Spotify 재생 정보와 싱크 가사를 잠금화면 카드(Live Activity)에 표시
 //
 // 잠금화면 카드
-//   가사가 있을 때 : 제목 · 아티스트 / 이전 줄 / 현재 줄 / 다음 줄
+//   가사가 있을 때 : 이전 줄 / 현재 줄 / 다음 줄 (제목·시간·진행 막대 없음, 작업 013)
 //   가사가 없을 때 : 아티스트 / 곡 제목 / 앨범
-//   맨 아래        : 재생 시간·진행 막대 (iOS가 스스로 흘려 보냄)
 //
 // 카드는 "바뀐 게 있을 때만" 갱신
-//   - 곡 변경, 재생/일시정지 변경, 가사 줄 변경, 재생 위치가 0.7초 이상 어긋났을 때 (위치 이동·오차 보정)
+//   - 처음, 곡 변경, 재생/일시정지 변경, 표시 내용(가사 줄) 변경
 import ActivityKit
 import AuthenticationServices
 import Combine
@@ -903,11 +902,7 @@ final class ExperimentController: ObservableObject {
         if key != lastSentKey { return "곡 변경" }
         if old.current != new.current { return "표시 내용 변경" }
         if old.isPlaying != new.isPlaying { return new.isPlaying ? "재생" : "일시정지" }
-        if new.isPlaying, let a = old.trackStart, let b = new.trackStart {
-            let drift = b.timeIntervalSince(a)
-            if abs(drift) > 0.7 { return String(format: "시간 보정 %+.1f초", -drift) }
-        }
-        if !new.isPlaying, abs(old.pausedPosition - new.pausedPosition) > 0.7 { return "일시정지 중 위치 이동" }
+        // 카드에 시간·진행 막대가 없으므로 시간 보정·일시정지 위치 이동은 보이지 않는 변화 → 갱신하지 않음 (작업 013)
         return nil
     }
 

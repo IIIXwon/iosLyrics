@@ -15,8 +15,10 @@ LocationKeepAlive (저전력 위치 추적) ── 앱을 백그라운드에서 
 - **가사**: LRCLIB (`https://lrclib.net/api/get`, `/api/search`) — 무료 커뮤니티 DB, 조회만
 
 ## 잠금화면 카드
-- **시간 표시**: `Text(timerInterval:)`, `ProgressView(timerInterval:)` → iOS가 스스로 흘려 보냄. 앱은 `trackStart`(곡 0초 시각)만 넘김
-- **갱신 조건**: 곡 변경 / 재생·일시정지 / 위치가 0.7초 이상 어긋남 / 가사 줄 변경
+- **카드 구성** (작업 013): 이전·현재·다음 줄만 표시. 제목·가수 줄, 재생 시간·진행 막대(`PlaybackTimeRow`)는 제거함. 일시정지 때만 "▶︎ 가사 다시 켜기" 버튼
+- **다이내믹 아일랜드**: expanded·compact·minimal 모두 비워 둠(`EmptyView`). iOS에 Live Activity를 아일랜드에서 빼는 공식 설정이 없어 최선의 방법. 실제로 비는지는 실기기에서 확인
+- **갱신 조건**: 처음 / 곡 변경 / 표시 내용(가사 줄) 변경 / 재생·일시정지. 시간 보정·일시정지 중 위치 이동은 카드에 보이지 않아 갱신하지 않음
+- `trackStart`·`trackEnd`·`pausedPosition`·`duration`·`trackInfo`는 계약(`ContentState`)에 남아 있지만 위젯은 쓰지 않음 (기존 카드 이어받기와 형식 유지)
 - **`ContentState`** (`LyricsActivityAttributes.swift`):
   previous / current / next / trackInfo / isPlaying / trackStart / trackEnd / pausedPosition / duration
   - 실험용이던 `updateCount`·`updatedAt`과 번역용 `translation`은 정리하면서 제거함
