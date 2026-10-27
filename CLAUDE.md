@@ -108,7 +108,6 @@ Claude Code 메인 세션(리드)이 서브에이전트 `qa`, `ios-dev`를 불�
 - 클래스는 `@MainActor`, 델리게이트 메서드는 `nonisolated` + `Task { @MainActor in ... }`
 - `ObservableObject`를 쓰는 파일은 **`import Combine`** 필수 (없으면 conform 오류)
 - 공유 struct는 `nonisolated struct` (Swift 6 기본 MainActor 격리 대응)
-- `Float`와 `Double`을 섞어 계산하지 말 것
 - 파일 추가 시 같은 이름 중복 금지 ("already exists", "Invalid redeclaration" 경험)
 - 시간 계산은 `ProcessInfo.processInfo.systemUptime` 기준, 카드용 Date는 `Date() - position`
 - 로그는 `ExperimentController.log()`로, 이모지 접두어로 구분 (✅ ❌ ⚠️ 🎵 🪪 💓 📍 등)
