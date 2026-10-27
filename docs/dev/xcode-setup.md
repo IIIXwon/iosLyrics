@@ -9,6 +9,9 @@
   - `NSLocationWhenInUseUsageDescription`
   - `NSLocationAlwaysAndWhenInUseUsageDescription`
   - `NSLocationDefaultAccuracyReduced = YES`
+  - `CFBundleURLTypes`: 앱 주소 `livelyrics://` (카드 탭 `open-spotify`) — 작업 009
+  - `LSApplicationQueriesSchemes`: `spotify` (카드 탭으로 Spotify 앱 열기) — 작업 009
+- Swift 패키지 없음 (009의 `SpotifyiOS`는 010에서 제거)
 
 ## 두 타깃 공통
 - **Minimum Deployments ≤ 실제 아이폰 iOS 버전** — 위젯 쪽이 더 높으면 Live Activity가 안 뜸
@@ -17,7 +20,7 @@
 
 ## Spotify 개발자 대시보드
 - Redirect URI: `livelyrics://callback`
-- API: Web API 선택
+- API: Web API 선택 (009 때 넣은 iOS app bundles의 Bundle ID는 SDK 전용이라 지워도 됨)
 - 앱 소유자 계정 **Premium 필수**
 
 ## Apple 계정

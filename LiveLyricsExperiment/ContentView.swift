@@ -68,6 +68,8 @@ struct ContentView: View {
             default: break
             }
         }
+        // 잠금화면 카드 탭(livelyrics://open-spotify) → Spotify 열기 (작업 009·010)
+        .onOpenURL { controller.handleOpenURL($0) }
     }
 
     /// 준비 상태의 [해결] 버튼이 하는 일

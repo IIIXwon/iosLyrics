@@ -67,6 +67,8 @@ final class ExperimentController: ObservableObject {
         api = SpotifyAPI(auth: auth)
         nowPlaying = NowPlayingService(api: api)
         readiness = ReadinessModel(auth: auth, location: location)
+        // 작업 009의 SDK 실험 스위치 값은 더 이상 쓰지 않으므로 지움 (작업 010)
+        UserDefaults.standard.removeObject(forKey: "sdkExperimentEnabled")
         // 일시정지 중 곡 유지 기간 = 위치 추적을 끄는 시점(idleGrace) + 안내 카드를 먼저 그릴 여유 10초
         nowPlaying.pausedHoldLimit = idleGrace + 10
 
@@ -200,6 +202,8 @@ final class ExperimentController: ObservableObject {
         afterPlayTask = nil
         quotaNoticeText = nil
         nowPlaying.stop()
+        spotifyWaitTask?.cancel()
+        spotifyWaitTask = nil
         resetLyrics()
         idleTask?.cancel()
         idleTask = nil
@@ -302,11 +306,6 @@ final class ExperimentController: ObservableObject {
             log("💓 조회 재개 — \(Self.durationText(now.timeIntervalSince(last))) 만에 · \(appStateName()) · 위치 \(location.isRunning ? "ON" : "OFF")")
         }
         lastPollAt = now
-
-        // 10번 조회마다 살아 있다는 기록 (백그라운드에서도 계속 도는지 확인용)
-        if nowPlaying.pollCount % 10 == 0 {
-            log("💓 조회 #\(nowPlaying.pollCount) · \(appStateName()) · 위치 \(location.isRunning ? "ON" : "OFF")")
-        }
 
         guard activity != nil else { return }
         updateLocationPolicy(playing: np?.isPlaying == true)
@@ -508,8 +507,9 @@ final class ExperimentController: ObservableObject {
     }
 
     /// 재생 요청 1번: 마지막으로 재생이 확인된 기기(`device_id`)로 요청하고, 404면 기기 목록을 로그에 남기고 재생을 옮겨 재시도
-    private func playOnce() async -> PlayResult {
-        let remembered = nowPlaying.lastDevice
+    /// device를 주면 그 기기로 요청 (카드 탭 후 나타난 기기, 작업 010)
+    private func playOnce(device: SpotifyDevice? = nil) async -> PlayResult {
+        let remembered = device ?? nowPlaying.lastDevice
         let target = remembered.map { "기기: \($0.name)" } ?? "기기 지정 없음"
         do {
             let status = try await api.play(deviceID: remembered?.id)
@@ -608,6 +608,107 @@ final class ExperimentController: ObservableObject {
         state.next = ""
         noticeUntil = Date().addingTimeInterval(8)
         sendCard(state, key: nowPlaying.current?.key, reason: "안내: \(text)")
+    }
+
+    // MARK: - 카드 탭 → Spotify 열기 → 자동 재생 (작업 009·010)
+
+    private var spotifyWaitTask: Task<Void, Never>?   // Spotify를 연 뒤 기기가 나타나길 기다리는 중 (하나만)
+
+    /// 앱 주소(livelyrics://…)로 앱이 열렸을 때. open-spotify = 잠금화면 카드 탭
+    func handleOpenURL(_ url: URL) {
+        guard url.scheme == SpotifyConfig.callbackScheme else { return }
+        if url.host == "open-spotify" {
+            openSpotify()
+        } else {
+            log("ℹ️ 알 수 없는 앱 주소: \(url.absoluteString)")
+        }
+    }
+
+    private func openSpotify() {
+        log("🔗 카드 탭 → Spotify 열기")
+        guard let url = URL(string: "spotify:"), UIApplication.shared.canOpenURL(url) else {
+            log("⚠️ Spotify 앱을 열 수 없어요 (설치돼 있지 않음)")
+            return
+        }
+        // Spotify로 넘어가면 우리 앱은 백그라운드가 됨 → 기다리는 동안 살아 있도록 화면에 있는 지금 위치 추적부터 켬
+        let shouldWait = isRunning && activity != nil && SpotifyBlock.until == nil   // 한도 차단 중이면 대기 안 함 (작업 008)
+        if shouldWait, spotifyWaitTask == nil { restartLocationForResume() }
+        UIApplication.shared.open(url)
+        if shouldWait { startSpotifyWait() }
+    }
+
+    /// Spotify를 연 직후: 2초마다 기기 목록을 확인(최대 20초)하고, 기기가 나타나면 그 기기로 재생 요청 1번
+    /// 오래 멈춘 뒤에는 Spotify 앱이 연결을 끊어서(404) 사용자가 Spotify에서 재생을 직접 눌러야 했던 것을 대신함
+    private func startSpotifyWait() {
+        guard spotifyWaitTask == nil else {
+            log("🔗 이미 연결 대기 중 — 이어서 기다려요")
+            return
+        }
+        idleTask?.cancel()
+        idleTask = nil
+        log("🔗 Spotify 열림 → 연결 대기 (최대 20초)")
+        spotifyWaitTask = Task {
+            await waitForSpotifyDeviceAndPlay()
+            spotifyWaitTask = nil
+        }
+    }
+
+    private func waitForSpotifyDeviceAndPlay() async {
+        let interval: UInt64 = 2
+        for step in 1...10 {
+            try? await Task.sleep(nanoseconds: interval * 1_000_000_000)
+            guard !Task.isCancelled, isRunning else { return }
+            let elapsed = Int(interval) * step
+
+            // 폴링이 이미 재생 중을 확인했으면 재생 요청을 보내지 않음
+            if nowPlaying.current?.isPlaying == true {
+                log("🔗 이미 재생 중 → 대기 종료")
+                return
+            }
+
+            let devices: [SpotifyDevice]
+            do {
+                devices = try await api.devices()
+            } catch SpotifyAPIError.blocked(let until, let body) {
+                handleQuotaBlock(until: until, body: body)
+                return
+            } catch {
+                log("⚠️ 기기 목록 조회 오류: \(error.localizedDescription)")
+                continue
+            }
+
+            // 기억한 기기, 없으면 스마트폰 기기 (컴퓨터·스피커 등으로는 옮기지 않음 — 기존 404 대응과 같은 기준)
+            let remembered = nowPlaying.lastDevice
+            guard let target = devices.first(where: { $0.id != nil && $0.id == remembered?.id })
+                    ?? devices.first(where: { $0.type == "Smartphone" && $0.id != nil }) else { continue }
+
+            // 활성 기기면 이미 재생 중일 수 있어서 한 번 조회해서 확인 (활성이어도 일시정지일 수 있음)
+            if target.isActive {
+                await nowPlaying.refreshNow()
+                if nowPlaying.current?.isPlaying == true {
+                    log("🔗 이미 재생 중 → 대기 종료")
+                    return
+                }
+            }
+
+            // ▶︎ 버튼의 재생 요청이 진행 중이면 겹쳐 보내지 않음
+            guard !playRequestInProgress else {
+                log("🔗 기기 나타남 (\(elapsed)초) — ▶︎ 재생 요청이 진행 중이라 대기 종료")
+                return
+            }
+            log("🔗 기기 나타남 (\(elapsed)초) → 재생 요청")
+            playRequestInProgress = true
+            _ = await playOnce(device: target)
+            playRequestInProgress = false
+
+            // 재생 요청 뒤 즉시 1회 조회 → 카드·가사 갱신 (▶︎ 흐름과 같은 순서)
+            if !location.isRunning { restartLocationForResume() }
+            nowPlaying.start()
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            await nowPlaying.refreshNow()
+            return
+        }
+        log("🔗 20초 동안 기기 없음 → 대기 종료")
     }
 
     // MARK: - 가사
@@ -786,7 +887,8 @@ final class ExperimentController: ObservableObject {
         activityUpdates += 1
         lastSent = state
         lastSentKey = key
-        log("🪪 카드 갱신 #\(activityUpdates) — \(reason)")
+        // 가사 줄 변경은 줄마다 쌓이기만 해서 기록하지 않음 (횟수는 계속 셈, 작업 010)
+        if reason != "가사 줄 변경" { log("🪪 카드 갱신 #\(activityUpdates) — \(reason)") }
         return Task { await activity.update(ActivityContent(state: state, staleDate: nil)) }
     }
 

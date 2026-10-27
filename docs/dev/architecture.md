@@ -1,7 +1,7 @@
 # 아키텍처
 
 ```
-Spotify Web API (1초 폴링) ─▶ NowPlayingService ─▶ 재생 위치 계산 (폴링 사이엔 경과 시간으로 추정)
+Spotify Web API (3초 폴링) ─▶ NowPlayingService ─▶ 재생 위치 계산 (폴링 사이엔 경과 시간으로 추정)
                                                         │
 LRCLIB (곡 변경 시 1회)  ─▶ LyricsService (LRC 파싱) ─▶ 현재 줄 계산
                                                         │
@@ -20,9 +20,13 @@ LocationKeepAlive (저전력 위치 추적) ── 앱을 백그라운드에서 
 - **`ContentState`** (`LyricsActivityAttributes.swift`):
   previous / current / next / trackInfo / isPlaying / trackStart / trackEnd / pausedPosition / duration
   - 실험용이던 `updateCount`·`updatedAt`과 번역용 `translation`은 정리하면서 제거함
+- **누르는 곳** (작업 009·010)
+  - ▶︎ 버튼(일시정지 때만): `ResumeLyricsIntent` → `resumeFromCard()` (잠금 해제 불필요)
+  - 나머지 영역: `widgetURL(livelyrics://open-spotify)` → 잠금 해제 → 앱이 `spotify:`를 열고, 뒤에서 2초마다 기기 목록 확인(최대 20초) → 기억한 기기·스마트폰 기기가 나타나면 재생 요청 1번 → 즉시 조회. 한도 차단 중·이미 재생 중이면 재생 요청 안 함
+- 재생 정보는 **Web API만** 사용. Spotify iOS SDK는 009에서 실험 후 010에서 제거 (우리 앱이 화면에 있을 때만 재연결돼 이득이 작음)
 
 ## 재생 정보 (NowPlayingService)
-- 폴링 간격 **1초 (기본값)**. 88분 테스트에서 호출 한도 초과 없음
+- 폴링 간격: 재생 중 **3초** · 일시정지 15초 · 곡 없음 10초 (작업 008, 1초 폴링으로 하루 쓰면 호출 한도 초과)
 - 곡 변경·일시정지·seek 감지, 폴링 사이엔 경과 시간으로 위치 추정
 
 ## 가사 (LyricsService, 앱 타깃)
