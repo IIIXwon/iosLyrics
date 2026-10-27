@@ -1,7 +1,7 @@
 # 로드맵 — 현재 상태와 다음 계획
 
-> 작성: Claude 앱 (계획 담당) · Xcode Agent는 **읽기만**
-> 기준 자료: `docs/dev/progress.md` (Agent 작성, 2026-10-26 정리본)
+> 작성: 리드 (Claude Code 메인 세션) · 서브에이전트는 **읽기만**
+> 기준 자료: `docs/dev/reports/` (작업별 결과), 2026-10-26 이전 기록은 `docs/dev/archive/progress-2026-10.md`
 > 최종 갱신: 2026-10-27 (001·004~010 완료)
 
 ---
@@ -23,6 +23,12 @@
 ---
 
 ## 2. 다음 할 일 (우선순위 순)
+
+### 🟡 P0. 작업 구조 변경 (2026-10-27)
+- Claude 앱(계획) ↔ Xcode Agent(구현) 구조를 **Claude Code 리드 + `qa`·`ios-dev`**로 변경 — 브랜치 `task/000-agent-structure` (CLAUDE.md "HOW", `.claude/`)
+- 남은 일: 테스트 타깃 `LiveLyricsTests` 추가(사용자, Xcode) → 빌드·테스트 명령 확정 → PR
+- **다음 작업 011 (시범 운행)**: Spotify Client ID를 `Spotify/SpotifySecrets.swift`(gitignore)로 분리. Red 목록 없음, 아이폰에서 로그인 유지 확인
+- 그다음: 테스트가 있는 작업(P3 가사 검색 규칙 보강)으로 테스트 먼저 흐름 전체 확인
 
 ### ✅ P1. 재생 재개 시 카드가 멈추는 문제 → 카드 ▶︎ 버튼으로 해결 (001 완료)
 - 위치 추적이 꺼져 앱이 중단된 뒤에도, 카드의 ▶︎를 누르면 앱이 깨어나 위치 추적·가사가 다시 이어짐 ("앱 사용 중" 권한으로 충분)

@@ -6,3 +6,9 @@ xcuserdata/
 DerivedData/
 build/
 *.ipa
+
+# Claude Code 개인 설정
+.claude/settings.local.json
+
+# Spotify Client ID — 외부 노출 금지, 로컬에서만 사용
+Spotify/SpotifySecrets.swift
