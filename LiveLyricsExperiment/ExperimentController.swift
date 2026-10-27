@@ -86,8 +86,33 @@ final class ExperimentController: ObservableObject {
             log("⚠️ SpotifyConfig.swift에 Client ID를 넣어 주세요")
         }
 
+        // 앱 전환기에서 앱을 지우면(강제 종료) 카드도 바로 종료 (작업 014)
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.willTerminateNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.handleAppTermination() }
+        }
+
         // 앱이 새로 시작됐을 때 남아 있는 카드가 있으면 이어받음 (작업 006). 없애지 않음
         adoptExistingActivities()
+    }
+
+    /// 앱이 강제 종료될 때(iOS가 알림을 보냄) 카드를 동기로 종료 (작업 014)
+    /// 이 함수가 끝나면 프로세스도 끝나므로, 종료가 끝날 때까지 최대 2초 기다림.
+    /// ⚠️ wait 동안 메인 스레드가 막히므로 end는 메인 액터와 무관한 Task.detached에서 하고, 그 안에서 self를 쓰지 않음 (데드락 방지)
+    /// userStopped는 바꾸지 않음 → 다시 열면 자동 시작
+    private func handleAppTermination() {
+        log("🛑 앱 강제 종료 → 카드 종료")
+        nowPlaying.stop()
+        location.stop()
+        let semaphore = DispatchSemaphore(value: 0)
+        Task.detached {
+            for old in Activity<LyricsActivityAttributes>.activities {
+                await old.end(nil, dismissalPolicy: .immediate)
+            }
+            semaphore.signal()
+        }
+        _ = semaphore.wait(timeout: .now() + 2)
     }
 
     // MARK: - 로그인
