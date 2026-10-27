@@ -40,7 +40,7 @@ Spotify에서 재생 중인 곡의 **싱크 가사를 아이폰 잠금화면(Liv
 
 - **`LocationKeepAlive`**: 앱이 잠금 상태에서도 카드를 갱신하려면 백그라운드에 살아 있어야 하는데, 실험상 **위치 추적만 통과**했다. 제거·대체 금지
 - **`ExperimentController`**: 카드 갱신의 **유일한 창구**. `Activity.update`는 여기서만, 바뀐 게 있을 때만 호출
-- **`NowPlayingService`**: 폴링 사이의 위치를 추정해 `trackStart`만 넘긴다. 카드의 시간·진행바는 iOS가 `timerInterval`로 스스로 흘린다 → 매초 갱신하지 말 것
+- **`NowPlayingService`**: 폴링 사이의 위치를 추정한다. 카드에는 가사 줄만 표시(시간·진행바 없음, 013) → 가사 줄이 바뀔 때만 갱신, 매초 갱신하지 말 것
 - **`LyricsActivityAttributes`**: 필드를 바꾸면 앱·위젯 **양쪽**이 영향받음. 반드시 둘 다 같이 수정
 - **잠금화면 카드 중심**: 다이내믹 아일랜드는 Spotify 표시가 우선이라 거의 안 보임
 
@@ -74,7 +74,7 @@ Claude Code 메인 세션(리드)이 서브에이전트 `qa`, `ios-dev`를 불�
 |---|---|
 | `LyricsActivityAttributes.swift` | 앱 ↔ 위젯 데이터 계약(`ContentState`). 바꾸면 양쪽 모두 영향 |
 | `LiveLyricsExperiment/Info.plist`, `LyricsWidget/Info.plist`, `LiveLyricsExperiment.xcodeproj` | 권한, Background Modes, 타깃·빌드 설정 |
-| `docs/plan/**` | 지시서, roadmap, decisions, constraints |
+| `docs/plan/**` | 지시서, roadmap, decisions, constraints, 플랜 모드 계획 |
 
 다른 역할은 계약을 읽기만 한다. 바꿔야 하면 근거(파일:줄)와 함께 리드에게 보고한다.
 
@@ -143,6 +143,7 @@ Claude Code 메인 세션(리드)이 서브에이전트 `qa`, `ios-dev`를 불�
 
 ## 📝 문서 관리
 - `docs/plan/` : 리드가 작성·수정 (지시서, roadmap, decisions, constraints). 지시서 상태 줄은 리드만 바꾼다
+- 플랜 모드 계획도 `docs/plan/`에 둔다 (`.claude/settings.json`의 `plansDirectory`). `~/.claude/plans/`에 쓰지 않는다
 - `docs/dev/` : `ios-dev`가 작성·수정 (architecture, xcode-setup, reports/)
 - `docs/dev/archive/` : 이전 구조(Claude 앱 → Xcode Agent) 시절 기록. 더는 갱신하지 않는다
 - `CLAUDE.md` : 리드만 수정
