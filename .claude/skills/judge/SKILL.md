@@ -19,7 +19,7 @@ disable-model-invocation: true
 ## ③ 판정
 ### 통과
 1. 지시서 맨 아래에 `## 검토 N차 — 완료 (날짜)` 섹션(항목별 판정과 근거 로그 줄 요약)을 추가하고 맨 위 상태 줄을 `완료`로 바꾼다.
-2. `docs/plan/roadmap.md` 현황을 갱신한다. 새 결정은 `docs/plan/decisions.md`, 실험으로 새로 확인된 제약은 `docs/plan/constraints.md`에 추가한다.
+2. `docs/plan/roadmap.md`에서 해당 번호를 "진행 중"에서 "완료"로 옮긴다(`| 번호 | 제목 |`, PR 번호는 적지 않음). 새 결정은 `docs/plan/decisions.md`, 실험으로 새로 확인된 제약은 `docs/plan/constraints.md`에 추가한다.
 3. (`docs/`는 git에 올리지 않으므로 커밋하지 않는다) **사용자 확인** 후 push → `gh pr create --base main`
    - 본문: 요약 / 변경(계약·앱·위젯·테스트) / 테스트(Red n개 → 통과) / `/code-review` 지적(반영·보류) / 아이폰 확인 결과
 4. **사용자 승인** 후 `gh pr merge --squash --delete-branch && git switch main && git pull`
