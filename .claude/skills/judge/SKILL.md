@@ -23,6 +23,7 @@ disable-model-invocation: true
 3. 커밋 `docs(plan): <번호> 완료` → **사용자 확인** 후 push → `gh pr create --base main`
    - 본문: 요약 / 변경(계약·앱·위젯·테스트) / 테스트(Red n개 → 통과) / `/code-review` 지적(반영·보류) / 아이폰 확인 결과
 4. **사용자 승인** 후 `gh pr merge --squash --delete-branch && git switch main && git pull`
+5. 마지막에 사용자에게 이렇게 알린다: "<번호> 완료, PR 머지까지 끝났어요. `/clear` 후 `/task <다음 번호>`로 다음 작업을 시작하세요." `/clear`는 사용자가 직접 입력해야 한다. 다음 번호는 roadmap 우선순위 기준으로 정하고, 그 지시서가 아직 없으면 "`/task <번호>`를 입력하면 지시서 초안부터 시작해요"라고 덧붙인다.
 
 ### 수정 필요
 1. 지시서 맨 아래에 `## 검토 N차 — 수정 요청 (날짜)`: 무엇이 왜 안 됐는지, 근거 로그 줄, 고칠 것, (필요하면) 추가할 Red 목록. 상태 줄을 `수정 요청`으로.
