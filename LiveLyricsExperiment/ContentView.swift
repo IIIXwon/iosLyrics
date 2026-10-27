@@ -1,5 +1,5 @@
 // 앱 타깃 — 메인 화면: 준비 상태, Spotify 로그인, 현재 재생 정보, 싱크 보정, 시작/정지, 저장된 가사
-// 로그·배터리 기록·조회 설정은 맨 아래 [개발자 메뉴]로 옮겼어요 (로그 기록은 계속 쌓음)
+// 로그·조회 설정은 맨 아래 [개발자 메뉴]로 옮겼어요 (로그 기록은 계속 쌓음)
 import AuthenticationServices
 import SwiftUI
 
@@ -89,7 +89,7 @@ struct ContentView: View {
     }
 }
 
-// MARK: - 개발자 메뉴 (로그 · 배터리 측정 기록 · 조회 설정)
+// MARK: - 개발자 메뉴 (로그 · 조회 설정)
 
 private struct DeveloperMenuView: View {
     @EnvironmentObject private var controller: ExperimentController
@@ -115,12 +115,6 @@ private struct DeveloperMenuView: View {
                 Text("Spotify 호출 수")
             } footer: {
                 Text("Spotify Web API를 실제로 보낸 횟수예요 (LRCLIB 제외). 한도 초과가 있었는지 확인할 때 쓰세요.")
-            }
-
-            Section("배터리 측정 기록") {
-                let battery = controller.logs.filter { $0.contains("🔋 측정") || $0.contains("🔋 중간 기록") }
-                if battery.isEmpty { Text("아직 없음").foregroundStyle(.secondary) }
-                ForEach(battery, id: \.self) { Text($0).font(.caption.monospaced()) }
             }
 
             Section {
