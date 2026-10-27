@@ -82,7 +82,7 @@ Claude Code 메인 세션(리드)이 서브에이전트 `qa`, `ios-dev`를 불�
 | 목적 | 명령 |
 |---|---|
 | 빌드(컴파일 확인) | `xcodebuild -project LiveLyricsExperiment.xcodeproj -scheme LiveLyricsExperiment -destination 'generic/platform=iOS' -quiet build` (서명 오류면 끝에 `CODE_SIGNING_ALLOWED=NO`) |
-| 단위 테스트 | `xcodebuild -project LiveLyricsExperiment.xcodeproj -scheme LiveLyricsExperiment -destination 'platform=iOS Simulator,name=<기기 이름>' -quiet test` |
+| 단위 테스트 | `xcodebuild -project LiveLyricsExperiment.xcodeproj -scheme LiveLyricsExperiment -destination 'platform=iOS Simulator,name=iPhone 18' -quiet test` |
 | 시뮬레이터 이름 확인 | `xcrun simctl list devices available` |
 | 규칙·Client ID 점검 | `scripts/check.sh` |
 

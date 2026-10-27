@@ -19,6 +19,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		3019563D3090C41D00B1D215 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 309A0760308E5F2800852D61 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 309A0767308E5F2800852D61;
+			remoteInfo = LiveLyricsExperiment;
+		};
 		309A078A308E5F4000852D61 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 309A0760308E5F2800852D61 /* Project object */;
@@ -41,6 +48,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		301956393090C41D00B1D215 /* LiveLyricsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LiveLyricsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		309A0768308E5F2800852D61 /* LiveLyricsExperiment.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LiveLyricsExperiment.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		309A077A308E5F3C00852D61 /* LyricsWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LyricsWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		309A077C308E5F3C00852D61 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
@@ -70,6 +78,11 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		3019563A3090C41D00B1D215 /* LiveLyricsTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = LiveLyricsTests;
+			sourceTree = "<group>";
+		};
 		309A076A308E5F2800852D61 /* LiveLyricsExperiment */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -89,6 +102,11 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		301956363090C41D00B1D215 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
+			);
+		};
 		309A0765308E5F2800852D61 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
@@ -109,6 +127,7 @@
 			children = (
 				309A076A308E5F2800852D61 /* LiveLyricsExperiment */,
 				309A0780308E5F3C00852D61 /* LyricsWidget */,
+				3019563A3090C41D00B1D215 /* LiveLyricsTests */,
 				309A077B308E5F3C00852D61 /* Frameworks */,
 				309A079E308E5FD900852D61 /* LyricsActivityAttributes.swift */,
 				309A07C3308EDC3200852D61 /* Spotify */,
@@ -121,6 +140,7 @@
 			children = (
 				309A0768308E5F2800852D61 /* LiveLyricsExperiment.app */,
 				309A077A308E5F3C00852D61 /* LyricsWidgetExtension.appex */,
+				301956393090C41D00B1D215 /* LiveLyricsTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -148,6 +168,27 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		301956383090C41D00B1D215 /* LiveLyricsTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 301956413090C41D00B1D215 /* Build configuration list for PBXNativeTarget "LiveLyricsTests" */;
+			buildPhases = (
+				301956353090C41D00B1D215 /* Sources */,
+				301956363090C41D00B1D215 /* Frameworks */,
+				301956373090C41D00B1D215 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				3019563E3090C41D00B1D215 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				3019563A3090C41D00B1D215 /* LiveLyricsTests */,
+			);
+			name = LiveLyricsTests;
+			productName = LiveLyricsTests;
+			productReference = 301956393090C41D00B1D215 /* LiveLyricsTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		309A0767308E5F2800852D61 /* LiveLyricsExperiment */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 309A0773308E5F2A00852D61 /* Build configuration list for PBXNativeTarget "LiveLyricsExperiment" */;
@@ -198,6 +239,10 @@
 				LastSwiftUpdateCheck = 2710;
 				LastUpgradeCheck = 2710;
 				TargetAttributes = {
+					301956383090C41D00B1D215 = {
+						CreatedOnToolsVersion = 27.1;
+						TestTargetID = 309A0767308E5F2800852D61;
+					};
 					309A0767308E5F2800852D61 = {
 						CreatedOnToolsVersion = 27.1;
 					};
@@ -222,11 +267,17 @@
 			targets = (
 				309A0767308E5F2800852D61 /* LiveLyricsExperiment */,
 				309A0779308E5F3C00852D61 /* LyricsWidgetExtension */,
+				301956383090C41D00B1D215 /* LiveLyricsTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		301956373090C41D00B1D215 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			files = (
+			);
+		};
 		309A0766308E5F2800852D61 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			files = (
@@ -240,6 +291,11 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		301956353090C41D00B1D215 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+			);
+		};
 		309A0764308E5F2800852D61 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			files = (
@@ -259,6 +315,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		3019563E3090C41D00B1D215 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 309A0767308E5F2800852D61 /* LiveLyricsExperiment */;
+			targetProxy = 3019563D3090C41D00B1D215 /* PBXContainerItemProxy */;
+		};
 		309A078B308E5F4000852D61 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 309A0779308E5F3C00852D61 /* LyricsWidgetExtension */;
@@ -267,6 +328,48 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		3019563F3090C41D00B1D215 /* Debug configuration for PBXNativeTarget "LiveLyricsTests" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = Q2635R4PG4;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hwan.LiveLyricsTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LiveLyricsExperiment.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/LiveLyricsExperiment";
+			};
+			name = Debug;
+		};
+		301956403090C41D00B1D215 /* Release configuration for PBXNativeTarget "LiveLyricsTests" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = Q2635R4PG4;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hwan.LiveLyricsTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LiveLyricsExperiment.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/LiveLyricsExperiment";
+			};
+			name = Release;
+		};
 		309A0771308E5F2A00852D61 /* Debug configuration for PBXProject "LiveLyricsExperiment" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -527,6 +630,14 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		301956413090C41D00B1D215 /* Build configuration list for PBXNativeTarget "LiveLyricsTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3019563F3090C41D00B1D215 /* Debug configuration for PBXNativeTarget "LiveLyricsTests" */,
+				301956403090C41D00B1D215 /* Release configuration for PBXNativeTarget "LiveLyricsTests" */,
+			);
+			defaultConfigurationName = Release;
+		};
 		309A0763308E5F2800852D61 /* Build configuration list for PBXProject "LiveLyricsExperiment" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
