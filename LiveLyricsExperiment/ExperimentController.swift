@@ -102,16 +102,19 @@ final class ExperimentController: ObservableObject {
     /// ⚠️ wait 동안 메인 스레드가 막히므로 end는 메인 액터와 무관한 Task.detached에서 하고, 그 안에서 self를 쓰지 않음 (데드락 방지)
     /// userStopped는 바꾸지 않음 → 다시 열면 자동 시작
     private func handleAppTermination() {
-        log("🛑 앱 강제 종료 → 카드 종료")
-        nowPlaying.stop()
-        location.stop()
         let semaphore = DispatchSemaphore(value: 0)
+        // 카드 종료를 가장 먼저 시작 (아래 메인 작업보다 앞서 end 요청이 나가도록). 여러 카드는 동시에 종료
         Task.detached {
-            for old in Activity<LyricsActivityAttributes>.activities {
-                await old.end(nil, dismissalPolicy: .immediate)
+            await withTaskGroup(of: Void.self) { group in
+                for old in Activity<LyricsActivityAttributes>.activities {
+                    group.addTask { await old.end(nil, dismissalPolicy: .immediate) }
+                }
             }
             semaphore.signal()
         }
+        log("🛑 앱 강제 종료 → 카드 종료")
+        nowPlaying.stop()
+        location.stop()
         _ = semaphore.wait(timeout: .now() + 2)
     }
 
