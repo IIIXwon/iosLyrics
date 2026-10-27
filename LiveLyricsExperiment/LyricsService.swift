@@ -117,6 +117,34 @@ nonisolated enum LyricsError: LocalizedError {
     }
 }
 
+/// 가사 조회 재시도 규칙 (작업 012)
+nonisolated enum LyricsRetryPolicy {
+    /// 잠시 뒤 다시 시도하면 될 수 있는 오류인지 (서버 5xx·429·네트워크)
+    static func isTransient(_ error: Error) -> Bool {
+        if let lyricsError = error as? LyricsError {
+            switch lyricsError {
+            case .http(let code): return code >= 500 || code == 429
+            }
+        }
+        if let urlError = error as? URLError {
+            return urlError.code != .cancelled
+        }
+        return false
+    }
+
+    /// n번째 실패 뒤 기다릴 초. nil이면 더 시도하지 않음
+    static func delay(afterFailure attempt: Int) -> TimeInterval? {
+        switch attempt {
+        case 1: return 2
+        case 2: return 5
+        case 3: return 15
+        case 4: return 30
+        case 5: return 60
+        default: return nil
+        }
+    }
+}
+
 // MARK: - 검색 보강용 문자열 정리
 
 nonisolated enum TitleCleaner {
