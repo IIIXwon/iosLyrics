@@ -100,7 +100,7 @@ Claude Code 메인 세션(리드)이 서브에이전트 `qa`, `ios-dev`를 불�
 
 ### Git
 - `main`은 PR + squash merge로만 바꾼다. main 직접 push는 hook으로 차단한다
-- 브랜치 `task/<번호>-<이름>`. 커밋 메시지는 Conventional Commits (`docs(plan): 011 지시서`, `test(lyrics): ... (Red)`, `feat(lyrics): ...`, `fix(lyrics): 리뷰 반영`)
+- 브랜치 `task/<번호>-<이름>`. 커밋 메시지는 Conventional Commits (`test(lyrics): ... (Red)`, `feat(lyrics): ...`, `fix(lyrics): 리뷰 반영`)
 - push, PR 생성, merge 전에는 사용자 확인을 받는다. git은 리드만 다룬다
 - `git add`는 파일 이름으로만 한다(`-A`, `.`, `commit -a` 금지). 커밋 전에 `scripts/check.sh`
 - ⚠️ **Spotify Client ID는 외부 노출 금지, 로컬에서만 사용**: `Spotify/SpotifyConfig.swift`의 Client ID 변경과 `Spotify/SpotifySecrets.swift`는 커밋·PR·보고서·로그 인용에 넣지 않는다
