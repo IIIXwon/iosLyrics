@@ -34,7 +34,6 @@ final class ExperimentController: ObservableObject {
     let nowPlaying: NowPlayingService
     let location = LocationKeepAlive()
     let readiness: ReadinessModel          // 작업 004: 화면 맨 위의 "준비 상태"
-    private let battery = BatteryMeter()
     private let api: SpotifyAPI
 
     private var activity: Activity<LyricsActivityAttributes>?
@@ -77,7 +76,6 @@ final class ExperimentController: ObservableObject {
         readiness.onLog = { [weak self] in self?.log($0) }
         location.onAuthorizationChange = { [weak self] in self?.readiness.refresh() }
         location.onLog = { [weak self] in self?.log($0) }
-        battery.onLog = { [weak self] in self?.log($0) }
         nowPlaying.onLog = { [weak self] in self?.log($0) }
         nowPlaying.onUpdate = { [weak self] np, changed in self?.didUpdate(np, trackChanged: changed) }
         nowPlaying.onBlocked = { [weak self] until, body in self?.handleQuotaBlock(until: until, body: body) }
@@ -221,7 +219,6 @@ final class ExperimentController: ObservableObject {
         }
 
         isRunning = true
-        battery.start()
         nowPlaying.start()
         log("▶️ 추적 시작 — 조회 간격 \(Int(nowPlaying.interval))초")
         return true
@@ -243,7 +240,6 @@ final class ExperimentController: ObservableObject {
         activity = nil
         Task { await ending?.end(nil, dismissalPolicy: .immediate) }
         location.stop()
-        battery.stop()
         isRunning = false
         log("⏹ 정지 (조회 \(nowPlaying.pollCount)회, 카드 갱신 \(activityUpdates)회, 갱신 생략 \(skippedUpdates)회)")
     }

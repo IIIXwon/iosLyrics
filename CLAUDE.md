@@ -21,7 +21,7 @@ Spotify에서 재생 중인 곡의 **싱크 가사를 아이폰 잠금화면(Liv
 | `ContentView.swift` | 로그인, 현재 재생, 시작/정지, 로그 화면 |
 | `ExperimentController.swift` | 전체 조율: Live Activity 시작·갱신·종료, 로그 |
 | `LyricsService.swift` | LRCLIB 4단계 검색 + LRC 파싱 + 현재 줄 계산 + 앱 전용 저장 폴더(`LyricsStore`: `synced/`·`plain/`) |
-| `LocationKeepAlive.swift` | 백그라운드 유지용 저전력 위치 추적 + `BatteryMeter` |
+| `LocationKeepAlive.swift` | 백그라운드 유지용 저전력 위치 추적 |
 | `Spotify/SpotifyConfig.swift` | Client ID, Redirect URI `livelyrics://callback`, scopes |
 | `Spotify/SpotifyAuth.swift` | PKCE 로그인, 토큰 갱신, 키체인(`AfterFirstUnlock`) 저장 |
 | `Spotify/SpotifyAPI.swift` | currently-playing 조회, 401 재시도, 429 Retry-After |
@@ -90,7 +90,6 @@ Claude Code 메인 세션(리드)이 서브에이전트 `qa`, `ios-dev`를 불�
 
 - **아이폰 실행·동작 확인은 사용자가** 실기기에서 한다. 테스트 통과 ≠ 동작 확인이므로 실기기에서 볼 항목을 알려 준다
 - 결과 확인: 사용자가 앱의 [전체 복사] 로그를 붙여 줌. 잠금 상태 확인은 Mac 콘솔 앱에서 `liveactivitiesd` 로그
-- 배터리 측정은 충전기를 뺀 상태에서
 
 ### 테스트 규칙
 - 단위 테스트(Swift Testing, 타깃 `LiveLyricsTests`)는 **순수 로직만**: LRC 파싱, 현재 줄 계산, 제목 정리·연주곡 제목 판단, 재검색 간격, 호출 수·한도 판단, 권한 판단 등
@@ -109,7 +108,6 @@ Claude Code 메인 세션(리드)이 서브에이전트 `qa`, `ios-dev`를 불�
 - 클래스는 `@MainActor`, 델리게이트 메서드는 `nonisolated` + `Task { @MainActor in ... }`
 - `ObservableObject`를 쓰는 파일은 **`import Combine`** 필수 (없으면 conform 오류)
 - 공유 struct는 `nonisolated struct` (Swift 6 기본 MainActor 격리 대응)
-- `Float`와 `Double`을 섞어 계산하지 말 것 (배터리 잔량은 `Float`)
 - 파일 추가 시 같은 이름 중복 금지 ("already exists", "Invalid redeclaration" 경험)
 - 시간 계산은 `ProcessInfo.processInfo.systemUptime` 기준, 카드용 Date는 `Date() - position`
 - 로그는 `ExperimentController.log()`로, 이모지 접두어로 구분 (✅ ❌ ⚠️ 🎵 🪪 💓 📍 등)
