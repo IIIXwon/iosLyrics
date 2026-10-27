@@ -811,25 +811,30 @@ final class ExperimentController: ObservableObject {
         loadLyrics(for: np)
     }
 
-    /// LRCLIB 검색. 오류(일시적인 서버·네트워크 문제)면 2초, 5초 뒤에 다시 시도 (최대 3번). 끝내 실패하면 nil
+    /// LRCLIB 검색. 일시 오류(서버 5xx·429·네트워크)면 2·5·15·30·60초 간격으로 최대 6번 시도 (작업 012).
+    /// 일시 오류가 아니면 바로 멈춤. 끝내 실패하면 nil
     private func searchWithRetry(_ np: NowPlaying, key: String) async -> LyricsResult? {
-        let retryDelays: [UInt64] = [2, 5]
-        for attempt in 0...retryDelays.count {
+        var failures = 0
+        while true {
             do {
                 return try await LyricsService.find(
                     title: np.title, artist: np.artist, album: np.album, duration: np.duration)
             } catch {
                 guard !Task.isCancelled, lyricsKey == key else { return nil }
-                guard attempt < retryDelays.count else {
-                    log("⚠️ 가사 조회 실패 (\(attempt + 1)번 시도): \(error.localizedDescription)")
+                failures += 1
+                guard LyricsRetryPolicy.isTransient(error) else {
+                    log("⚠️ 가사 조회 실패 (재시도 안 함): \(error.localizedDescription)")
                     return nil
                 }
-                log("⚠️ 가사 조회 오류: \(error.localizedDescription) — \(retryDelays[attempt])초 뒤 재시도")
-                try? await Task.sleep(nanoseconds: retryDelays[attempt] * 1_000_000_000)
+                guard let wait = LyricsRetryPolicy.delay(afterFailure: failures) else {
+                    log("⚠️ 가사 조회 실패 (\(failures)번 시도): \(error.localizedDescription)")
+                    return nil
+                }
+                log("⚠️ 가사 조회 오류: \(error.localizedDescription) — \(Int(wait))초 뒤 재시도")
+                try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
                 guard !Task.isCancelled, lyricsKey == key else { return nil }
             }
         }
-        return nil
     }
 
     /// 찾은 가사를 현재 곡에 적용하고, 인터넷에서 새로 받은 것이면 앱 전용 폴더에 저장
