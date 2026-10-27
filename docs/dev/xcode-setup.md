@@ -23,5 +23,13 @@
 - API: Web API 선택 (009 때 넣은 iOS app bundles의 Bundle ID는 SDK 전용이라 지워도 됨)
 - 앱 소유자 계정 **Premium 필수**
 
+## Client ID 설정 (`SpotifySecrets.swift`)
+Client ID는 git에 올라가지 않는 `Spotify/SpotifySecrets.swift`에 둔다 (`.gitignore`에 등록됨). 앱 타깃에만 포함, 위젯 타깃에는 넣지 않는다.
+1. `Spotify/SpotifySecrets.swift.example`을 복사해 `Spotify/SpotifySecrets.swift`로 이름을 바꾼다
+2. 파일 안의 `"여기에 Client ID"`를 대시보드(내 앱 → Settings)의 Client ID로 바꾼다
+3. `SpotifyConfig.clientID`가 이 값을 읽는다. 값이 `"여기에"`를 포함하면 `isConfigured`가 false
+- ⚠️ 새로 받은 폴더에서 이 파일이 없으면 빌드가 `cannot find 'SpotifySecrets' in scope`로 실패한다 → 위 1~2번을 먼저 한다
+- `.example`은 확장자 때문에 컴파일되지 않는다. 실제 값을 넣지 말 것
+
 ## Apple 계정
 - 무료 계정(Personal Team): 7일마다 재서명, 기기당 앱 3개
