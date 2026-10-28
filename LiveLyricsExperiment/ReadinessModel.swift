@@ -12,7 +12,7 @@ import Foundation
 nonisolated struct ReadinessItem: Identifiable, Equatable {
     /// 문제를 고치는 버튼이 하는 일
     /// (Spotify 로그인 버튼은 없음 — 로그인/로그아웃은 메인 화면 "Spotify" 칸에서만, 작업 018 검토 1차)
-    enum Fix: Equatable {
+    nonisolated enum Fix: Equatable {
         case openSettings     // 이 앱의 설정 화면 열기
         case requestLocation  // 위치 권한 요청 (사용자가 눌렀을 때만)
     }
@@ -42,7 +42,6 @@ final class ReadinessModel: ObservableObject {
     private var previousReady: [String: Bool] = [:]
 
     var hasProblem: Bool { items.contains { !$0.isReady } }
-    var problemCount: Int { items.filter { !$0.isReady }.count }
 
     init(auth: SpotifyAuth, location: LocationKeepAlive) {
         self.auth = auth
@@ -162,7 +161,7 @@ final class ReadinessModel: ObservableObject {
 nonisolated enum ReadinessSummary: Equatable {
     case ready                  // 전부 ✅ (항목 없음 포함)
     case partial(problems: Int) // ✅와 ❌가 섞임 → ⚠️
-    case none(problems: Int)    // 전부 ❌ → ❌
+    case notReady(problems: Int) // 전부 ❌ → ❌ (Optional.none과 헷갈리지 않게 이름 변경, 리뷰 반영)
 }
 
 extension ReadinessModel {
@@ -170,7 +169,7 @@ extension ReadinessModel {
     nonisolated static func summary(_ items: [ReadinessItem]) -> ReadinessSummary {
         let problems = items.filter { !$0.isReady }.count
         if problems == 0 { return .ready }
-        return problems == items.count ? .none(problems: problems) : .partial(problems: problems)
+        return problems == items.count ? .notReady(problems: problems) : .partial(problems: problems)
     }
 
     /// Spotify 로그인 항목 만들기 (버튼 없음 — 로그인/로그아웃은 Spotify 칸에서만)

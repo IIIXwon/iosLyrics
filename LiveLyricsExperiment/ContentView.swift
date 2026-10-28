@@ -194,7 +194,7 @@ private struct ReadinessSection: View {
                 case .partial(let problems):
                     Text("⚠️ 준비가 덜 됐어요 (\(problems)개)")
                         .font(.headline).foregroundStyle(.orange)
-                case .none(let problems):
+                case .notReady(let problems):
                     Text("❌ 준비가 안 됐어요 (\(problems)개)")
                         .font(.headline).foregroundStyle(.red)
                 }
