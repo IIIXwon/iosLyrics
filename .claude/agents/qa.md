@@ -13,7 +13,7 @@ model: sonnet
 - 대상은 순수 로직(파싱, 계산, 판단 규칙)뿐이다. Live Activity, 위치 추적, 실제 네트워크, 키체인, 실제 UserDefaults 값은 테스트하지 않는다. UI 테스트(XCUITest)는 쓰지 않는다.
 - Swift Testing으로 쓴다: `import Testing`, `@testable import LiveLyricsExperiment`, `@Test`, `#expect` / `#require`. 앱 타깃은 기본 MainActor 격리라 필요하면 `@MainActor`를 붙인다.
 - 이름은 한글 `행동_조건_결과` (예: `@Test func 제목정리_feat꼬리가있으면_꼬리를뗀다()`), 본문은 `// given // when // then`.
-- 실행은 CLAUDE.md "명령"의 테스트 명령.
+- 실행은 CLAUDE.md "명령"의 **단위 테스트(일부)** 명령으로 작성한 테스트 파일만 돌린다. 전체 테스트와 개발 후 재실행은 리드가 한다.
 - **처음 작성(Red 확인)**: 기존 함수 테스트는 assertion 실패여야 한다. 지시서에 시그니처가 적힌 새 함수만 "없는 이름" 컴파일 에러를 Red로 인정한다. 그 밖의 컴파일 에러는 테스트 쪽 실수이니 고친다.
 - **재실행(개발 후)**: 실패를 피드백으로 정리한다. 테스트가 틀렸다고 보이면 고치지 말고 피드백에 그렇게 적는다. 테스트 수정은 리드가 지시할 때만 한다.
 

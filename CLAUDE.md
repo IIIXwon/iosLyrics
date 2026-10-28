@@ -82,7 +82,8 @@ Claude Code 메인 세션(리드)이 서브에이전트 `qa`, `ios-dev`를 불�
 | 목적 | 명령 |
 |---|---|
 | 빌드(컴파일 확인) | `xcodebuild -project LiveLyricsExperiment.xcodeproj -scheme LiveLyricsExperiment -destination 'generic/platform=iOS' -quiet build` (서명 오류면 끝에 `CODE_SIGNING_ALLOWED=NO`) |
-| 단위 테스트 | `xcodebuild -project LiveLyricsExperiment.xcodeproj -scheme LiveLyricsExperiment -destination 'platform=iOS Simulator,name=iPhone 18 Pro' -quiet test` |
+| 단위 테스트(전체, 리드만) | `xcodebuild -project LiveLyricsExperiment.xcodeproj -scheme LiveLyricsExperiment -destination 'platform=iOS Simulator,name=iPhone 18 Pro' -quiet test` |
+| 단위 테스트(일부, `qa`·`ios-dev`) | 위 명령 끝에 `-only-testing:LiveLyricsTests/<테스트 파일 이름(확장자 없이)>` |
 | 시뮬레이터 이름 확인 | `xcrun simctl list devices available` |
 | 규칙·Client ID 점검 | `scripts/check.sh` |
 
@@ -133,7 +134,8 @@ Claude Code 메인 세션(리드)이 서브에이전트 `qa`, `ios-dev`를 불�
 
 ## 🔁 작업 흐름
 - **`/roadmap`**: 예정·진행 중·완료를 "번호 제목"으로 보기. `/roadmap add <내용>`으로 예정에 추가 → `/task N`(번호만)으로 시작
-- **`/task N`**: ① 리드 지시서(없으면 plan mode로 초안 → 승인)·브랜치 → ② `qa` 테스트 작성(Red) → ③ `ios-dev` 개발 → ④ `qa` 테스트 실행 → ⑤ 리드 확인 + `/code-review` → ⑥ 아이폰 확인 항목을 알려 주고 멈춤
+- **`/task N`**: ① 리드 지시서(없으면 plan mode로 초안 → 승인)·브랜치 → ② `qa` 테스트 작성(Red) → ③ `ios-dev` 개발 → ④ 리드가 전체 테스트 1번 실행 → ⑤ 리드 확인 + `/code-review` → ⑥ 아이폰 확인 항목을 알려 주고 멈춤
+  - 시뮬레이터 테스트는 느리므로 `qa`·`ios-dev`는 해당 테스트 파일만(`-only-testing`), 전체는 리드만 돌린다
   - ④ 실패·⑤ 지적 → `ios-dev`가 항목마다 수용(수정 후 ④) 또는 거절(리드 판정: 테스트 틀림 → `qa` / 지시서 모호 → 리드 / 개발 틀림 → `ios-dev`)
   - Red 목록이 "없음"이면 ②④를 건너뛴다. 피드백 루프가 3번을 넘으면 사용자에게 묻는다
 - **`/judge N`**: 사용자가 붙인 로그 → `qa` 로그 모드로 근거 정리 → 리드 판정 → 통과(지시서 `완료`, roadmap·decisions 갱신, PR) 또는 "검토 N차 — 수정 요청" → `/task N`
