@@ -15,7 +15,7 @@ struct ReadinessRulesTests {
         // given
         let items = [item("a", ready: true), item("b", ready: true), item("c", ready: true)]
         // when
-        let result = ReadinessModel.summary(items)
+        let result = ReadinessRules.summary(items)
         // then
         #expect(result == .ready)
     }
@@ -24,7 +24,7 @@ struct ReadinessRulesTests {
         // given
         let items = [item("a", ready: true), item("b", ready: false), item("c", ready: false)]
         // when
-        let result = ReadinessModel.summary(items)
+        let result = ReadinessRules.summary(items)
         // then
         #expect(result == .partial(problems: 2))
     }
@@ -33,7 +33,7 @@ struct ReadinessRulesTests {
         // given
         let items = [item("a", ready: false), item("b", ready: false), item("c", ready: false)]
         // when
-        let result = ReadinessModel.summary(items)
+        let result = ReadinessRules.summary(items)
         // then
         #expect(result == .notReady(problems: 3))
     }
@@ -42,7 +42,7 @@ struct ReadinessRulesTests {
         // given
         let items: [ReadinessItem] = []
         // when
-        let result = ReadinessModel.summary(items)
+        let result = ReadinessRules.summary(items)
         // then
         #expect(result == .ready)
     }
@@ -53,7 +53,7 @@ struct ReadinessRulesTests {
         // given
         let isConfigured = true, isLoggedIn = false, needsRelogin = false
         // when
-        let result = ReadinessModel.spotifyItem(isConfigured: isConfigured, isLoggedIn: isLoggedIn, needsRelogin: needsRelogin)
+        let result = ReadinessRules.spotifyItem(isConfigured: isConfigured, isLoggedIn: isLoggedIn, needsRelogin: needsRelogin)
         // then
         #expect(result.isReady == false)
         #expect(result.fix == nil)
@@ -65,7 +65,7 @@ struct ReadinessRulesTests {
         // given
         let isConfigured = true, isLoggedIn = true, needsRelogin = true
         // when
-        let result = ReadinessModel.spotifyItem(isConfigured: isConfigured, isLoggedIn: isLoggedIn, needsRelogin: needsRelogin)
+        let result = ReadinessRules.spotifyItem(isConfigured: isConfigured, isLoggedIn: isLoggedIn, needsRelogin: needsRelogin)
         // then
         #expect(result.isReady == false)
         #expect(result.fix == nil)
@@ -76,7 +76,7 @@ struct ReadinessRulesTests {
         // given
         let isConfigured = true, isLoggedIn = true, needsRelogin = false
         // when
-        let result = ReadinessModel.spotifyItem(isConfigured: isConfigured, isLoggedIn: isLoggedIn, needsRelogin: needsRelogin)
+        let result = ReadinessRules.spotifyItem(isConfigured: isConfigured, isLoggedIn: isLoggedIn, needsRelogin: needsRelogin)
         // then
         #expect(result.isReady == true)
         #expect(result.okDetail == "로그인됨")
@@ -86,7 +86,7 @@ struct ReadinessRulesTests {
         // given
         let isConfigured = false, isLoggedIn = false, needsRelogin = false
         // when
-        let result = ReadinessModel.spotifyItem(isConfigured: isConfigured, isLoggedIn: isLoggedIn, needsRelogin: needsRelogin)
+        let result = ReadinessRules.spotifyItem(isConfigured: isConfigured, isLoggedIn: isLoggedIn, needsRelogin: needsRelogin)
         // then
         #expect(result.isReady == false)
         #expect(result.fix == nil)

@@ -36,4 +36,11 @@ cid=$(git grep --cached -nE 'clientID[^"]*"[0-9a-fA-F]{32}"' -- '*.swift' 2>/dev
 if [ -z "$hits" ]; then ok "Client ID가 스테이징·커밋 대상에 없음"
 else bad "Client ID가 git에 들어갈 수 있음 (git restore --staged <파일>)" "$hits"; fi
 
+# 5. swift test 대상 순수 로직(Logic/)은 Foundation만 import (작업 024, Mac에서 컴파일되도록)
+# 하위 폴더 포함, `@preconcurrency import X`·`import struct X.Y` 형태도 잡는다
+hits=$(grep -rnE --include='*.swift' '^[[:space:]]*(@[A-Za-z_]+[[:space:]]+)*import[[:space:]]' LiveLyricsExperiment/Logic 2>/dev/null \
+  | grep -vE ':[0-9]+:import Foundation[[:space:]]*$' || true)
+if [ -z "$hits" ]; then ok "Logic/ 파일은 import Foundation만 씀"
+else bad "Logic/ 파일에 Foundation 밖 import가 있음 (swift test에서 컴파일 안 됨)" "$hits"; fi
+
 exit $fail

@@ -1184,11 +1184,4 @@ final class ExperimentController: ObservableObject {
     var logText: String { logs.reversed().joined(separator: "\n") }
 }
 
-/// 앱 로그 보관 줄 수 (작업 019 검토 1차: 복사·붙여 넣기가 되도록 100줄)
-nonisolated enum LogLimit {
-    static let maxLines = 100
-    /// 최신 줄이 앞(index 0)인 배열에서 maxLines를 넘는 오래된 줄을 버림
-    static func trimmed(_ logs: [String]) -> [String] {
-        logs.count > maxLines ? Array(logs.prefix(maxLines)) : logs
-    }
-}
+// LogLimit(로그 보관 줄 수)은 Logic/LogLimit.swift로 옮김 (작업 024)

@@ -13,3 +13,7 @@ build/
 # Spotify Client ID — 외부 노출 금지, 로컬에서만 사용
 Spotify/SpotifySecrets.swift
 docs/
+
+# Swift Package 빌드 결과 (작업 024)
+.build/
+.swiftpm/
