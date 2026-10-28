@@ -52,6 +52,18 @@ final class SpotifyAuth: ObservableObject {
         return Set(SpotifyConfig.scopes).isSubset(of: granted)
     }
 
+    /// 로그인했을 때 받은 권한에 이 scope가 있는지 (읽기 전용, 진단 로그용 — 작업 025 검토 1차)
+    func hasScope(_ scope: String) -> Bool {
+        let granted = (UserDefaults.standard.string(forKey: Self.grantedScopesKey) ?? "").split(separator: " ")
+        return granted.contains { $0 == scope }
+    }
+
+    /// 지금 들고 있는 액세스 토큰의 남은 유효 시간(초). 토큰이 아직 없으면 nil (값 자체는 노출하지 않음)
+    var accessTokenRemaining: TimeInterval? {
+        guard accessToken != nil else { return nil }
+        return expiresAt.timeIntervalSinceNow
+    }
+
     // MARK: - 로그인
 
     /// 브라우저로 열 Spotify 로그인 주소

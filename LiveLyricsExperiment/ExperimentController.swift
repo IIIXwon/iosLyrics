@@ -42,6 +42,8 @@ final class ExperimentController: ObservableObject {
     let remote: SpotifyRemote
     private var remoteLastAttempt: TimeInterval?   // 마지막 연결 시도 시각 (기기 가동 시간 기준)
     private var remoteLastFailure: String?          // 같은 이유의 실패 로그를 연속으로 남기지 않으려고
+    private var remoteAttemptCount = 0               // SDK 연결 시도 번호 (진단 로그용, 025 검토 1차)
+    private var remoteScopeWarned = false            // "app-remote-control 권한 없음" 경고를 이미 남겼는지
 
     private var activity: Activity<LyricsActivityAttributes>?
     private var activityUpdates = 0
@@ -1201,10 +1203,41 @@ final class ExperimentController: ObservableObject {
     /// SDK 연결 시도. foreground(추적 시작·화면 복귀)면 항상, 아니면 마지막 시도 후 60초가 지났을 때만 (RemoteRetry)
     private func tryRemoteConnect(foreground: Bool) {
         guard isRunning, auth.isLoggedIn, !remote.isConnected, !remote.isConnecting else { return }
+        // 토큰에 app-remote-control 권한이 없으면 연결해도 실패하므로 시도하지 않음 (경고는 1번만)
+        guard auth.hasScope(Self.remoteScope) else {
+            if !remoteScopeWarned {
+                remoteScopeWarned = true
+                log("⚠️ SDK 연결 불가 — 다시 로그인 필요 (\(Self.remoteScope) 권한 없음)")
+            }
+            return
+        }
+        remoteScopeWarned = false
         let now = ProcessInfo.processInfo.systemUptime
         guard RemoteRetry.shouldTry(now: now, lastAttempt: remoteLastAttempt, foreground: foreground) else { return }
         remoteLastAttempt = now
+        remoteAttemptCount += 1
+        log("⚡ SDK 연결 시도 #\(remoteAttemptCount) (\(appStateName())) — \(remoteDiagnostics())")
         remote.connect()
+    }
+
+    private static let remoteScope = "app-remote-control"
+
+    /// 연결 시도 줄의 진단 정보. ⚠️ 토큰 값은 절대 넣지 않음 (권한 유무·남은 시간만)
+    private func remoteDiagnostics() -> String {
+        let scope = "토큰 scope \(Self.remoteScope) \(auth.hasScope(Self.remoteScope) ? "있음" : "없음")"
+        let remaining: String
+        if let seconds = auth.accessTokenRemaining {
+            remaining = "남은 유효 \(max(0, Int(seconds / 60)))분"
+        } else {
+            remaining = "남은 유효 없음(연결 때 새로 받음)"
+        }
+        let playback: String
+        if let np = nowPlaying.current {
+            playback = np.isPlaying ? "재생 중" : "일시정지"
+        } else {
+            playback = "없음"
+        }
+        return "\(scope), \(remaining), Web API 재생 상태 \(playback)"
     }
 
     private func remoteConnectionChanged(_ connected: Bool) {

@@ -71,7 +71,7 @@ final class SpotifyRemote: NSObject {
             } catch {
                 guard isConnecting, attempt == current else { return }
                 endAttempt()
-                fail("토큰: \(error.localizedDescription)")
+                fail("토큰: \(Self.describe(error))")
             }
         }
     }
@@ -103,6 +103,18 @@ final class SpotifyRemote: NSObject {
             self.endAttempt()
             self.fail("시간 초과")
         }
+    }
+
+    /// 오류를 한 줄로: `<설명> [domain=… code=… ← underlying domain=… code=… <설명>]` (원인 진단용, 작업 025 검토 1차)
+    /// NSUnderlyingErrorKey는 한 단계 아래까지만. 토큰 값은 들어가지 않음(SDK 오류 설명·domain·code만)
+    nonisolated static func describe(_ error: Error?) -> String {
+        guard let error else { return "이유 없음" }
+        let ns = error as NSError
+        var detail = "domain=\(ns.domain) code=\(ns.code)"
+        if let under = ns.userInfo[NSUnderlyingErrorKey] as? NSError {
+            detail += " ← underlying domain=\(under.domain) code=\(under.code) \(under.localizedDescription)"
+        }
+        return "\(ns.localizedDescription) [\(detail)]"
     }
 
     private func fail(_ reason: String) {
@@ -164,7 +176,7 @@ extension SpotifyRemote: SPTAppRemoteDelegate {
     }
 
     nonisolated func appRemote(_ appRemote: SPTAppRemote, didFailConnectionAttemptWithError error: Error?) {
-        let text = error?.localizedDescription ?? "이유 없음"
+        let text = Self.describe(error)
         Task { @MainActor in
             self.endAttempt()
             if self.userDisconnectReason != nil {   // 우리가 끊는 중이었음 → 실패로 알리지 않음
@@ -176,7 +188,7 @@ extension SpotifyRemote: SPTAppRemoteDelegate {
     }
 
     nonisolated func appRemote(_ appRemote: SPTAppRemote, didDisconnectWithError error: Error?) {
-        let text = error?.localizedDescription
+        let text = error.map { Self.describe($0) }
         Task { @MainActor in
             self.endAttempt()
             let byUser = self.userDisconnectReason
