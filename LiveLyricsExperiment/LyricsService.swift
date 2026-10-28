@@ -132,17 +132,20 @@ nonisolated enum LyricCountdown {
         return target - TimeInterval(shown - 1)     // 3 → 2, 2 → 1로 바뀌는 시각
     }
 
-    /// 지금이 카운트다운 대상 구간(긴 전주·긴 간주)이면 다음 줄 시각, 아니면 nil
+    /// 지금이 카운트다운 대상 구간(긴 전주·긴 간주)이면 대상 줄 시각, 아니면 nil
+    /// 대상 = 지금 위치 뒤의 첫 번째 글자 있는 줄 (빈 줄이 이어져도 건너뜀, 리뷰 1차)
     private static func countdownTarget(_ lines: [LyricLine], at position: TimeInterval) -> TimeInterval? {
-        guard let first = lines.first else { return nil }
-        guard let index = lines.lastIndex(where: { $0.time <= position }) else {
-            // 전주: 0초 ~ 첫 줄
-            return first.time >= introMinimum ? first.time : nil
+        guard let target = lines.first(where: { $0.time > position && !$0.text.isEmpty })?.time else {
+            return nil   // 뒤에 글자 있는 줄이 없음
         }
-        // 간주: 현재 줄이 빈 줄(카드에 ♪)이고 다음 줄까지 충분히 길 때
-        guard lines[index].text.isEmpty, lines.indices.contains(index + 1) else { return nil }
-        let next = lines[index + 1].time
-        return next - lines[index].time >= interludeMinimum ? next : nil
+        // 전주: 지금 위치까지 글자 있는 줄이 하나도 없음 (빈 줄로 시작하는 LRC 포함)
+        let hasSungLine = lines.contains { $0.time <= position && !$0.text.isEmpty }
+        if !hasSungLine {
+            return target >= introMinimum ? target : nil
+        }
+        // 간주: 현재 줄이 빈 줄(카드에 ♪)이고 그 빈 줄부터 대상 줄까지 충분히 길 때
+        guard let current = lines.last(where: { $0.time <= position }), current.text.isEmpty else { return nil }
+        return target - current.time >= interludeMinimum ? target : nil
     }
 }
 

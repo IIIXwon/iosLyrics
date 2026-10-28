@@ -37,8 +37,10 @@ struct LockScreenLyricsView: View {
     var body: some View {
         VStack(spacing: 4) {
             if !state.previous.isEmpty {
+                // 왼쪽 위 카운트다운 숫자와 겹치지 않게 좌우 같은 여백 (가운데 정렬 유지, 작업 020 리뷰 1차)
                 Text(state.previous)
                     .font(.caption).foregroundStyle(.white.opacity(0.5))
+                    .padding(.horizontal, 12)
             }
             // 현재 줄만 2줄까지 (바깥 VStack의 lineLimit(1)보다 안쪽 설정이 우선). 긴 줄이 잘리지 않게
             Text(state.current)

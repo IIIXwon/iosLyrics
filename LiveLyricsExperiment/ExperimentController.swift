@@ -27,6 +27,8 @@ final class ExperimentController: ObservableObject {
             if let reason = updateReason(new: state, key: np.key) {
                 sendCard(state, key: np.key, reason: "\(reason) (싱크 보정 \(String(format: "%+.2f", syncOffset))초)")
             }
+            // 보정값이 바뀌면 다음 줄·카운트다운 예약 시각도 달라지므로 새로 잡음 (작업 020 리뷰 1차)
+            scheduleNextLine()
         }
     }
 
@@ -890,7 +892,7 @@ final class ExperimentController: ObservableObject {
         let position = min(np.duration, max(0, np.position() + syncOffset))
         // 다음 줄 시각과 카운트다운 숫자가 바뀌는 시각(작업 020) 중 먼저 오는 쪽에 깨어남
         let lineTime = LRCParser.context(lyrics, at: position).nextTime
-        let countdownTime = lyricsKind == .synced ? LyricCountdown.nextChange(lyrics, at: position) : nil
+        let countdownTime = LyricCountdown.nextChange(lyrics, at: position)   // lyrics는 싱크 가사일 때만 채워짐
         guard let nextTime = [lineTime, countdownTime].compactMap({ $0 }).min() else { return }
         let wait = max(0.05, nextTime - position)
         lineTask = Task {
@@ -946,9 +948,9 @@ final class ExperimentController: ObservableObject {
         guard let old = lastSent else { return "처음" }
         if key != lastSentKey { return "곡 변경" }
         if textChanged(old, new) { return "표시 내용 변경" }
-        // 숫자만 바뀐 건 줄 변경 예약과 같은 이유로 보내 로그를 늘리지 않음 (작업 020)
-        if old.countdown != new.countdown, old.isPlaying == new.isPlaying { return "가사 줄 변경" }
         if old.isPlaying != new.isPlaying { return new.isPlaying ? "재생" : "일시정지" }
+        // 숫자만 바뀐 건 줄 변경 예약과 같은 이유로 보내 로그를 늘리지 않음 (작업 020)
+        if old.countdown != new.countdown { return "가사 줄 변경" }
         // 카드에 시간·진행 막대가 없으므로 시간 보정·일시정지 위치 이동은 보이지 않는 변화 → 갱신하지 않음 (작업 013)
         return nil
     }
