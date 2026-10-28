@@ -106,6 +106,49 @@ nonisolated enum LRCParser {
     }
 }
 
+/// 전주·간주 끝 3초 동안 카드에 보일 3·2·1 (작업 020)
+nonisolated enum LyricCountdown {
+    /// 숫자를 보이는 시간(초) — 다음 줄 직전 3초
+    static let seconds: TimeInterval = 3
+    /// 전주(첫 줄 전) 최소 길이. 첫 줄이 이보다 빨리 나오면 숫자 없음
+    static let introMinimum: TimeInterval = 5
+    /// 간주(빈 줄 ~ 다음 줄) 최소 길이
+    static let interludeMinimum: TimeInterval = 8
+
+    /// 지금 위치에서 보일 숫자 (3·2·1). 안 보이면 0
+    static func value(_ lines: [LyricLine], at position: TimeInterval) -> Int {
+        guard let target = countdownTarget(lines, at: position) else { return 0 }
+        let remaining = target - position
+        guard remaining > 0, remaining <= seconds else { return 0 }
+        return Int(remaining.rounded(.up))   // 3.0 → 3, 2.5 → 3, 0.5 → 1
+    }
+
+    /// 숫자가 다음에 바뀌는 위치(초). 다음 변화가 줄 바뀜이거나 카운트다운 구간이 아니면 nil
+    static func nextChange(_ lines: [LyricLine], at position: TimeInterval) -> TimeInterval? {
+        guard let target = countdownTarget(lines, at: position) else { return nil }
+        let shown = value(lines, at: position)
+        if shown == 0 { return target - seconds }   // 아직 숫자 전 → 3이 나타나는 시각
+        if shown == 1 { return nil }                // 1 다음은 줄 바뀜 (기존 예약이 처리)
+        return target - TimeInterval(shown - 1)     // 3 → 2, 2 → 1로 바뀌는 시각
+    }
+
+    /// 지금이 카운트다운 대상 구간(긴 전주·긴 간주)이면 대상 줄 시각, 아니면 nil
+    /// 대상 = 지금 위치 뒤의 첫 번째 글자 있는 줄 (빈 줄이 이어져도 건너뜀, 리뷰 1차)
+    private static func countdownTarget(_ lines: [LyricLine], at position: TimeInterval) -> TimeInterval? {
+        guard let target = lines.first(where: { $0.time > position && !$0.text.isEmpty })?.time else {
+            return nil   // 뒤에 글자 있는 줄이 없음
+        }
+        // 전주: 지금 위치까지 글자 있는 줄이 하나도 없음 (빈 줄로 시작하는 LRC 포함)
+        let hasSungLine = lines.contains { $0.time <= position && !$0.text.isEmpty }
+        if !hasSungLine {
+            return target >= introMinimum ? target : nil
+        }
+        // 간주: 현재 줄이 빈 줄(카드에 ♪)이고 그 빈 줄부터 대상 줄까지 충분히 길 때
+        guard let current = lines.last(where: { $0.time <= position }), current.text.isEmpty else { return nil }
+        return target - current.time >= interludeMinimum ? target : nil
+    }
+}
+
 /// 로그에 상태 코드가 보이도록 (예: HTTP 503)
 nonisolated enum LyricsError: LocalizedError {
     case http(Int)

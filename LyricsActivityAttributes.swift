@@ -23,6 +23,10 @@ nonisolated struct LyricsActivityAttributes: ActivityAttributes {
         var pausedPosition: Double = 0
         /// 곡 길이 (초)
         var duration: Double = 0
+
+        // ── 작업 020: 전주·간주 카운트다운 ──
+        /// 3·2·1이면 카드 왼쪽 위에 표시, 0이면 숨김
+        var countdown: Int = 0
     }
 
     var title: String

@@ -37,8 +37,10 @@ struct LockScreenLyricsView: View {
     var body: some View {
         VStack(spacing: 4) {
             if !state.previous.isEmpty {
+                // 왼쪽 위 카운트다운 숫자와 겹치지 않게 좌우 같은 여백 (가운데 정렬 유지, 작업 020 리뷰 1차)
                 Text(state.previous)
                     .font(.caption).foregroundStyle(.white.opacity(0.5))
+                    .padding(.horizontal, 12)
             }
             // 현재 줄만 2줄까지 (바깥 VStack의 lineLimit(1)보다 안쪽 설정이 우선). 긴 줄이 잘리지 않게
             Text(state.current)
@@ -68,5 +70,16 @@ struct LockScreenLyricsView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
         .padding(.horizontal, 16)
+        // 전주·간주 끝 3초: 왼쪽 위에 3·2·1 (작업 020). overlay라 가사 줄 위치·크기는 그대로
+        .overlay(alignment: .topLeading) {
+            if state.countdown > 0 {
+                Text("\(state.countdown)")
+                    .font(.caption.bold())
+                    .monospacedDigit()
+                    .foregroundStyle(.white.opacity(0.7))
+                    .padding(.top, 10)
+                    .padding(.leading, 14)
+            }
+        }
     }
 }

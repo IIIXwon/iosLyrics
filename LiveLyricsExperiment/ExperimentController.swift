@@ -27,6 +27,8 @@ final class ExperimentController: ObservableObject {
             if let reason = updateReason(new: state, key: np.key) {
                 sendCard(state, key: np.key, reason: "\(reason) (싱크 보정 \(String(format: "%+.2f", syncOffset))초)")
             }
+            // 보정값이 바뀌면 다음 줄·카운트다운 예약 시각도 달라지므로 새로 잡음 (작업 020 리뷰 1차)
+            scheduleNextLine()
         }
     }
 
@@ -888,7 +890,10 @@ final class ExperimentController: ObservableObject {
         lineTask?.cancel()
         guard activity != nil, quotaNoticeText == nil, !lyrics.isEmpty, let np = nowPlaying.current, np.isPlaying else { return }
         let position = min(np.duration, max(0, np.position() + syncOffset))
-        guard let nextTime = LRCParser.context(lyrics, at: position).nextTime else { return }
+        // 다음 줄 시각과 카운트다운 숫자가 바뀌는 시각(작업 020) 중 먼저 오는 쪽에 깨어남
+        let lineTime = LRCParser.context(lyrics, at: position).nextTime
+        let countdownTime = LyricCountdown.nextChange(lyrics, at: position)   // lyrics는 싱크 가사일 때만 채워짐
+        guard let nextTime = [lineTime, countdownTime].compactMap({ $0 }).min() else { return }
         let wait = max(0.05, nextTime - position)
         lineTask = Task {
             try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
@@ -928,7 +933,13 @@ final class ExperimentController: ObservableObject {
     }
 
     /// 이전·현재·다음 줄 중 하나라도 달라졌는지 (같은 줄이 반복돼도 이전·다음 줄이 바뀌면 갱신)
+    /// 카운트다운 숫자(3·2·1)가 바뀌어도 갱신 (작업 020)
     private func linesChanged(_ old: LyricsActivityAttributes.ContentState, _ new: LyricsActivityAttributes.ContentState) -> Bool {
+        textChanged(old, new) || old.countdown != new.countdown
+    }
+
+    /// 이전·현재·다음 줄 글자만 비교
+    private func textChanged(_ old: LyricsActivityAttributes.ContentState, _ new: LyricsActivityAttributes.ContentState) -> Bool {
         old.previous != new.previous || old.current != new.current || old.next != new.next
     }
 
@@ -936,8 +947,10 @@ final class ExperimentController: ObservableObject {
     private func updateReason(new: LyricsActivityAttributes.ContentState, key: String?) -> String? {
         guard let old = lastSent else { return "처음" }
         if key != lastSentKey { return "곡 변경" }
-        if linesChanged(old, new) { return "표시 내용 변경" }
+        if textChanged(old, new) { return "표시 내용 변경" }
         if old.isPlaying != new.isPlaying { return new.isPlaying ? "재생" : "일시정지" }
+        // 숫자만 바뀐 건 줄 변경 예약과 같은 이유로 보내 로그를 늘리지 않음 (작업 020)
+        if old.countdown != new.countdown { return "가사 줄 변경" }
         // 카드에 시간·진행 막대가 없으므로 시간 보정·일시정지 위치 이동은 보이지 않는 변화 → 갱신하지 않음 (작업 013)
         return nil
     }
@@ -980,6 +993,10 @@ final class ExperimentController: ObservableObject {
             pausedPosition: position,
             duration: np.duration
         )
+        // 전주·간주 끝 3초의 3·2·1 (작업 020). 일시정지 중이면 0
+        if lyricsKind == .synced, np.isPlaying {
+            state.countdown = LyricCountdown.value(lyrics, at: position)
+        }
         applyQuotaNotice(&state)
         return state
     }
@@ -993,6 +1010,7 @@ final class ExperimentController: ObservableObject {
         state.current = text
         state.next = ""
         state.isPlaying = false
+        state.countdown = 0   // 안내 중에는 숫자 숨김 (작업 020)
     }
 
     /// 295초 → "4분 55초", 42초 → "42초"
