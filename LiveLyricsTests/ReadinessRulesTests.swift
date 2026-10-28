@@ -35,7 +35,7 @@ struct ReadinessRulesTests {
         // when
         let result = ReadinessModel.summary(items)
         // then
-        #expect(result == .none(problems: 3))
+        #expect(result == .notReady(problems: 3))
     }
 
     @Test func 라벨단계_항목이없으면_준비완료() {
