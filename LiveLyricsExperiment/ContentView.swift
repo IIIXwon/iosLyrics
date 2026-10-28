@@ -113,6 +113,15 @@ private struct DeveloperMenuView: View {
             }
 
             Section {
+                LrclibUsageRow(title: "오늘", daysAgo: 0)
+                LrclibUsageRow(title: "어제", daysAgo: 1)
+            } header: {
+                Text("LRCLIB 호출 수")
+            } footer: {
+                Text("가사 서버(LRCLIB)에 실제로 보낸 횟수예요. 한도는 1분에 약 90회예요.")
+            }
+
+            Section {
                 ForEach(controller.logs, id: \.self) { line in
                     Text(line).font(.caption.monospaced())
                 }
@@ -351,6 +360,19 @@ private struct ApiUsageRow: View {
         VStack(alignment: .leading, spacing: 2) {
             LabeledContent(title, value: "\(APIUsage.total(daysAgo: daysAgo))회")
             Text(APIUsage.summary(daysAgo: daysAgo))
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct LrclibUsageRow: View {
+    let title: String
+    let daysAgo: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            LabeledContent(title, value: "\(LrclibUsage.total(daysAgo: daysAgo))회")
+            Text(LrclibUsage.summary(daysAgo: daysAgo))
                 .font(.caption).foregroundStyle(.secondary)
         }
     }

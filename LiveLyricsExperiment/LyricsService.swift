@@ -422,6 +422,7 @@ nonisolated enum LyricsService {
 
         var request = URLRequest(url: url, timeoutInterval: 10)
         request.setValue("LiveLyricsExperiment (personal use)", forHTTPHeaderField: "User-Agent")
+        LrclibUsage.record(path == "get" ? .get : .search)   // 재시도 요청도 실제 호출이라 센다
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { return nil }
         if http.statusCode == 404 { return nil }
