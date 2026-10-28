@@ -30,11 +30,6 @@ final class ExperimentController: ObservableObject {
         }
     }
 
-    /// 카드 표시 실험 방식 (작업 019). 개발자 메뉴에서 바꾸면 다음 [시작]부터 적용. 앱을 껐다 켜도 유지
-    @Published var cardVisibilityMode = CardVisibilityMode(stored: UserDefaults.standard.string(forKey: "cardVisibilityMode")) {
-        didSet { UserDefaults.standard.set(cardVisibilityMode.rawValue, forKey: "cardVisibilityMode") }
-    }
-
     let auth = SpotifyAuth()
     let nowPlaying: NowPlayingService
     let location = LocationKeepAlive()
@@ -47,9 +42,7 @@ final class ExperimentController: ObservableObject {
     private var lastSent: LyricsActivityAttributes.ContentState?
     private var lastSentKey: String?
 
-    // 카드 표시 실험 (작업 019)
-    private var trackingMode: CardVisibilityMode = .normal          // 이번 추적에 적용 중인 방식 ([시작] 때 고정)
-    private var firstLyricsAlertSent = false                        // 이번 추적에서 시작 알림을 이미 보냈는지 (추적 1회당 최대 1번)
+    // 카드 상태 로그 (작업 019, 023 지연 측정에 씀)
     private var activityStateTask: Task<Void, Never>?               // 카드 상태 변화(activityStateUpdates) 구독
 
     // 3단계: 현재 곡의 싱크 가사 (없으면 빈 배열)
@@ -206,11 +199,6 @@ final class ExperimentController: ObservableObject {
         noticeUntil = nil
         quotaNoticeText = nil
         lastPollAt = nil
-        trackingMode = cardVisibilityMode
-        // 새 카드를 만들 때만 시작 알림을 다시 보낼 수 있게 함. 기존 카드를 이어받을 때(앱 재실행)는
-        // 이미 알림을 보낸 카드로 보고 다시 울리지 않음 (리뷰 반영)
-        firstLyricsAlertSent = (existing != nil)
-        log("🪪 카드 표시 실험: \(trackingMode.label)")
         if auth.needsRelogin {
             log("⚠️ 카드 ▶︎ 버튼(재생 제어)용 새 권한이 필요해요 → 로그아웃 후 Spotify에 다시 로그인")
         }
@@ -222,8 +210,7 @@ final class ExperimentController: ObservableObject {
             do {
                 activity = try Activity.request(
                     attributes: LyricsActivityAttributes(title: "Spotify", artist: ""),
-                    content: ActivityContent(state: makeState(nil), staleDate: nil,
-                                             relevanceScore: trackingMode.relevanceScore),
+                    content: ActivityContent(state: makeState(nil), staleDate: nil),
                     pushType: nil
                 )
                 log("✅ 잠금화면 카드 시작")
@@ -924,23 +911,8 @@ final class ExperimentController: ObservableObject {
         lastSentKey = key
         // 가사 줄 변경은 줄마다 쌓이기만 해서 기록하지 않음 (횟수는 계속 셈, 작업 010)
         if reason != "가사 줄 변경" { log("🪪 카드 갱신 #\(activityUpdates) — \(reason)") }
-        let content = ActivityContent(state: state, staleDate: nil, relevanceScore: trackingMode.relevanceScore)
-        // 시작 알림 실험 (작업 019): 추적 시작 후 처음으로 가사 줄이 있는 카드를 보낼 때 1번만 알림을 붙임
-        if trackingMode.alertsOnFirstLyrics, !firstLyricsAlertSent, isLyricsLineState(state) {
-            firstLyricsAlertSent = true
-            log("🔔 시작 알림 갱신 보냄")
-            let alert = AlertConfiguration(title: "가사 카드", body: "\(state.current)", sound: .default)
-            return Task { await activity.update(content, alertConfiguration: alert) }
-        }
+        let content = ActivityContent(state: state, staleDate: nil)
         return Task { await activity.update(content) }
-    }
-
-    /// 지금 보내는 카드가 "싱크 가사 줄"을 보여 주는지 (안내 문구·한도 차단 안내·전주 구간의 빈 줄은 제외) (작업 019)
-    private func isLyricsLineState(_ state: LyricsActivityAttributes.ContentState) -> Bool {
-        lyricsKind == .synced && !lyrics.isEmpty && quotaNoticeText == nil
-            && !idleNoticeShown && (noticeUntil.map { Date() >= $0 } ?? true)
-            && !state.current.isEmpty
-            && state.isPlaying   // 일시정지 중엔 알림을 쓰지 않음 (재생 중일 때만 1회 알림, 리뷰 반영)
     }
 
     /// 카드 상태 변화(활성·종료·사라짐 등)를 로그로 남김 — 시작 직후 iOS가 카드를 어떻게 다루는지 확인용 (작업 019)
@@ -1045,8 +1017,17 @@ final class ExperimentController: ObservableObject {
         let line = "\(time)  \(message)"
         print(line)
         logs.insert(line, at: 0)
-        if logs.count > 500 { logs.removeLast() }
+        if logs.count > LogLimit.maxLines { logs = LogLimit.trimmed(logs) }
     }
 
     var logText: String { logs.reversed().joined(separator: "\n") }
+}
+
+/// 앱 로그 보관 줄 수 (작업 019 검토 1차: 복사·붙여 넣기가 되도록 100줄)
+nonisolated enum LogLimit {
+    static let maxLines = 100
+    /// 최신 줄이 앞(index 0)인 배열에서 maxLines를 넘는 오래된 줄을 버림
+    static func trimmed(_ logs: [String]) -> [String] {
+        logs.count > maxLines ? Array(logs.prefix(maxLines)) : logs
+    }
 }
