@@ -42,6 +42,9 @@ final class ExperimentController: ObservableObject {
     private var lastSent: LyricsActivityAttributes.ContentState?
     private var lastSentKey: String?
 
+    // 카드 상태 로그 (작업 019, 023 지연 측정에 씀)
+    private var activityStateTask: Task<Void, Never>?               // 카드 상태 변화(activityStateUpdates) 구독
+
     // 3단계: 현재 곡의 싱크 가사 (없으면 빈 배열)
     private var lyrics: [LyricLine] = []          // 싱크 가사일 때만 채워짐
     private var lyricsKind: LyricsKind = .none
@@ -217,6 +220,7 @@ final class ExperimentController: ObservableObject {
                 return false
             }
         }
+        if let activity { watchActivityState(activity) }
 
         isRunning = true
         nowPlaying.start()
@@ -236,6 +240,8 @@ final class ExperimentController: ObservableObject {
         idleTask = nil
         idleNoticeShown = false
         noticeUntil = nil
+        activityStateTask?.cancel()
+        activityStateTask = nil
         let ending = activity
         activity = nil
         Task { await ending?.end(nil, dismissalPolicy: .immediate) }
@@ -905,7 +911,20 @@ final class ExperimentController: ObservableObject {
         lastSentKey = key
         // 가사 줄 변경은 줄마다 쌓이기만 해서 기록하지 않음 (횟수는 계속 셈, 작업 010)
         if reason != "가사 줄 변경" { log("🪪 카드 갱신 #\(activityUpdates) — \(reason)") }
-        return Task { await activity.update(ActivityContent(state: state, staleDate: nil)) }
+        let content = ActivityContent(state: state, staleDate: nil)
+        return Task { await activity.update(content) }
+    }
+
+    /// 카드 상태 변화(활성·종료·사라짐 등)를 로그로 남김 — 시작 직후 iOS가 카드를 어떻게 다루는지 확인용 (작업 019)
+    private func watchActivityState(_ activity: Activity<LyricsActivityAttributes>) {
+        activityStateTask?.cancel()
+        log("🪪 카드 상태: \(activity.activityState)")
+        activityStateTask = Task { [weak self] in
+            for await state in activity.activityStateUpdates {
+                guard !Task.isCancelled else { return }
+                self?.log("🪪 카드 상태: \(state)")
+            }
+        }
     }
 
     /// 이전·현재·다음 줄 중 하나라도 달라졌는지 (같은 줄이 반복돼도 이전·다음 줄이 바뀌면 갱신)
@@ -998,8 +1017,17 @@ final class ExperimentController: ObservableObject {
         let line = "\(time)  \(message)"
         print(line)
         logs.insert(line, at: 0)
-        if logs.count > 500 { logs.removeLast() }
+        if logs.count > LogLimit.maxLines { logs = LogLimit.trimmed(logs) }
     }
 
     var logText: String { logs.reversed().joined(separator: "\n") }
+}
+
+/// 앱 로그 보관 줄 수 (작업 019 검토 1차: 복사·붙여 넣기가 되도록 100줄)
+nonisolated enum LogLimit {
+    static let maxLines = 100
+    /// 최신 줄이 앞(index 0)인 배열에서 maxLines를 넘는 오래된 줄을 버림
+    static func trimmed(_ logs: [String]) -> [String] {
+        logs.count > maxLines ? Array(logs.prefix(maxLines)) : logs
+    }
 }
