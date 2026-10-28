@@ -16,6 +16,18 @@ import UIKit
 
 @MainActor
 final class SpotifyRemote: NSObject, ObservableObject {
+    /// connect()가 한 일 — 컨트롤러는 이 결과로 시도 줄·안내를 판단 (검토 2차 리뷰)
+    enum ConnectStart: Equatable {
+        /// 연결을 시작함. renewing이면 세션 갱신 후 연결 (진행 중인 갱신이 있으면 그 결과를 기다림)
+        case started(renewing: Bool)
+        /// 이미 연결됐거나 연결 중 → 아무것도 하지 않음
+        case busy
+        /// [Spotify 앱 연결] 승인 결과를 기다리는 중 (요청 후 authorizeWait 초까지) → 시도·안내하지 않음
+        case authorizing
+        /// 승인 세션이 없거나 갱신할 수 없음 → 시도하지 않음
+        case needAuthorize
+    }
+
     /// 플레이어 상태가 바뀔 때 (광고·에피소드·해석 실패면 nil)
     var onState: (@MainActor (RemoteSnapshot?) -> Void)?
     /// 연결됨(true) / 끊김(false). 끊긴 이유는 `lastError`
@@ -43,6 +55,10 @@ final class SpotifyRemote: NSObject, ObservableObject {
 
     /// 연결 시도 후 이 시간(초) 안에 성공·실패 콜백이 없으면 시간 초과로 보고 다시 시도할 수 있게 함 (세션 갱신 포함)
     private let connectTimeout: TimeInterval = 15
+    /// [Spotify 앱 연결] 후 이 시간(초)까지는 승인 결과를 기다리는 중으로 봄 ("연결 필요" 안내·시도 기록 안 함)
+    private let authorizeWait: TimeInterval = 30
+    /// 세션 갱신 요청 후 이 시간(초)이 지나도 결과가 없으면 SDK가 응답하지 않는 것으로 보고 다시 요청할 수 있게 함
+    private let renewStaleAfter: TimeInterval = 60
 
     /// 정지·강제 종료로 우리가 끊는 중 (끊긴 이유). 다음 connect()나 끊김·실패 콜백에서 지움
     private var userDisconnectReason: String?
@@ -53,9 +69,21 @@ final class SpotifyRemote: NSObject, ObservableObject {
 
     /// Spotify 앱 승인 세션 (키체인에서 복원). ⚠️ 값은 로그에 넣지 않음
     private var session: SPTSession?
-    /// 연결 전에 세션을 갱신하는 중인 시도 번호 (없으면 nil)
-    private var renewingFor: Int?
     private static let sessionKey = "spotify.sdkSession"
+
+    /// 세션 세대 번호. 로그아웃(clearSession)마다 1 올림 → 그 전에 시작한 승인·갱신의 결과는 버림 (검토 2차 리뷰)
+    private var generation = 0
+    /// SDK에 보낸 요청(승인·갱신)이 시작된 세대와 시각(기기 가동 시간). 결과가 오면 nil
+    private struct Pending {
+        let generation: Int
+        let startedAt: TimeInterval
+    }
+    /// [Spotify 앱 연결]로 보낸 승인 요청
+    private var authorizing: Pending?
+    /// SDK에 보낸 세션 갱신 요청 (renewSession). 진행 중이면 다시 부르지 않음
+    private var renewing: Pending?
+    /// 세션 갱신 결과를 기다리는 연결 시도 번호 (없으면 nil). 시간 초과·끊기·로그아웃에서 지움
+    private var renewingFor: Int?
 
     /// SDK 설정 — 기존 Client ID·`livelyrics://callback`. tokenSwap/Refresh URL은 nil(SDK가 PKCE로 교환), 재생 URI는 설정하지 않음
     private lazy var configuration: SPTConfiguration = {
@@ -69,16 +97,28 @@ final class SpotifyRemote: NSObject, ObservableObject {
         return remote
     }()
 
-    private lazy var sessionManager: SPTSessionManager = {
+    /// 처음 필요할 때(승인·갱신·돌아온 주소) 만듦. 로그아웃만으로는 만들지 않음
+    private var sessionManagerStorage: SPTSessionManager?
+    private var sessionManager: SPTSessionManager {
+        if let sessionManagerStorage { return sessionManagerStorage }
         let manager = SPTSessionManager(configuration: configuration, delegate: self)
         manager.session = session   // 복원한 세션으로 갱신(renewSession)할 수 있게
+        sessionManagerStorage = manager
         return manager
-    }()
+    }
 
     override init() {
         super.init()
         session = Self.loadSession()
         updateAuthAction()
+    }
+
+    private static var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
+
+    /// 이번 세대의 요청이고 아직 limit 초가 지나지 않았는지
+    private func isActive(_ pending: Pending?, within limit: TimeInterval) -> Bool {
+        guard let pending, pending.generation == generation else { return false }
+        return Self.now - pending.startedAt < limit
     }
 
     // MARK: - Spotify 앱 승인 (검토 2차)
@@ -92,6 +132,13 @@ final class SpotifyRemote: NSObject, ObservableObject {
 
     /// [Spotify 앱 연결]: Spotify 앱으로 넘어가 승인 → `livelyrics://callback`으로 돌아옴. 음악은 재생하지 않음
     func authorize() {
+        // 세션 갱신 결과를 기다리는 중이면 승인 요청을 겹치지 않음 (SDK 실패 콜백이 하나라 둘을 구분할 수 없게 됨)
+        if isActive(renewing, within: renewStaleAfter) {
+            onLog?("⚡ SDK 세션 갱신 중이에요 — 잠시 후 다시 눌러 주세요")
+            return
+        }
+        renewing = nil
+        authorizing = Pending(generation: generation, startedAt: Self.now)
         onLog?("⚡ Spotify 앱으로 이동해 승인 요청 (음악은 재생하지 않아요)")
         sessionManager.initiateSession(with: .appRemoteControl, options: .clientOnly, campaign: nil)
     }
@@ -102,12 +149,13 @@ final class SpotifyRemote: NSObject, ObservableObject {
         sessionManager.application(UIApplication.shared, open: url, options: [:])
     }
 
-    /// 로그아웃 때: 연결을 끊고 승인 세션을 메모리·키체인에서 지움
+    /// 로그아웃 때: 연결을 끊고 승인 세션을 메모리·키체인에서 지움. 세대를 올려 진행 중인 승인·갱신 결과는 버림
     func clearSession() {
         disconnect(reason: "로그아웃")
-        session = nil
+        generation += 1
         renewingFor = nil
-        sessionManager.session = nil
+        session = nil
+        sessionManagerStorage?.session = nil   // 아직 안 만들었으면 만들지 않음
         Keychain.delete(Self.sessionKey)
         updateAuthAction()
     }
@@ -143,23 +191,36 @@ final class SpotifyRemote: NSObject, ObservableObject {
         return "\(max(0, Int(seconds / 60)))분"
     }
 
+    /// 로그아웃(세대 변경) 전에 시작한 요청의 결과 → 저장·연결하지 않고 버림
+    private func ignoreStale() {
+        onLog?("⚡ 로그아웃 뒤 도착한 승인 결과 무시")
+    }
+
     private func sessionInitiated(_ data: Data?) {
+        guard let pending = authorizing, pending.generation == generation else {
+            if authorizing != nil { authorizing = nil }
+            ignoreStale()
+            return
+        }
+        authorizing = nil
         guard store(data) != nil else { return }
         onLog?("⚡ Spotify 앱 승인 완료 (만료까지 \(Self.minutesText(sessionRemaining)))")
         onAuthorized?()
     }
 
     private func sessionRenewed(_ data: Data?) {
-        let renewed = store(data)
-        if renewed != nil { onLog?("⚡ SDK 세션 갱신됨 (만료까지 \(Self.minutesText(sessionRemaining)))") }
-        guard let current = renewingFor else { return }
-        renewingFor = nil
-        // 갱신하는 사이 disconnect()·시간 초과·새 시도가 있었으면 그만둠
-        guard isConnecting, attempt == current else {
-            // SDK에 연결을 요청하기 전에 끊었으므로 끊김 콜백이 오지 않음 → 여기서 정리
-            if attempt == current { userDisconnectReason = nil }
+        guard let pending = renewing, pending.generation == generation else {
+            if renewing != nil { renewing = nil }
+            ignoreStale()
             return
         }
+        renewing = nil
+        let renewed = store(data)
+        if renewed != nil { onLog?("⚡ SDK 세션 갱신됨 (만료까지 \(Self.minutesText(sessionRemaining)))") }
+        // 갱신을 기다리는 시도가 없으면(시간 초과·끊기로 지워짐) 저장만 함
+        guard let current = renewingFor else { return }
+        renewingFor = nil
+        guard isConnecting, attempt == current else { return }
         guard let renewed else {
             endAttempt()
             fail("세션 갱신 결과를 읽지 못함", key: "세션 갱신 저장 실패")
@@ -168,30 +229,40 @@ final class SpotifyRemote: NSObject, ObservableObject {
         connectAppRemote(token: renewed.accessToken)
     }
 
-    /// 승인 또는 갱신 실패 (SDK는 둘을 같은 콜백으로 알려 줌 → 갱신 중이었는지로 구분)
+    /// 승인 또는 갱신 실패. SDK는 둘을 같은 콜백으로 알려 주므로 이번 세대에 보낸 요청으로 구분
+    /// (갱신 중에는 승인 요청을 받지 않으므로 둘이 동시에 이번 세대일 수 없음)
     private func sessionFailed(_ text: String, key: String) {
-        guard let current = renewingFor else {
+        if let pending = renewing, pending.generation == generation {
+            renewing = nil
+            onLog?("⚡ SDK 세션 갱신 실패: \(text)")
+            guard let current = renewingFor else { return }
+            renewingFor = nil
+            guard isConnecting, attempt == current else { return }
+            endAttempt()
+            fail("세션 갱신 실패", key: "세션 갱신 " + key)
+            return
+        }
+        if let pending = authorizing, pending.generation == generation {
+            authorizing = nil
             onLog?("⚡ Spotify 앱 승인 실패: \(text)")
             return
         }
-        renewingFor = nil
-        onLog?("⚡ SDK 세션 갱신 실패: \(text)")
-        guard isConnecting, attempt == current else {
-            if attempt == current { userDisconnectReason = nil }
-            return
-        }
-        endAttempt()
-        fail("세션 갱신 실패", key: "세션 갱신 " + key)
+        // 이번 세대에 보낸 요청이 없음 → 로그아웃 전 요청의 결과
+        renewing = nil
+        authorizing = nil
+        ignoreStale()
     }
 
     // MARK: - 연결
 
-    /// 연결 시도. 이미 연결됐거나 연결 중이면 무시. 승인이 필요하면(세션 없음·갱신 불가) 시도하지 않음
-    /// 만료가 가까우면 세션을 먼저 갱신하고 연결
-    func connect() {
-        guard !isConnected, !isConnecting else { return }
+    /// 연결 시도. 판단(이미 연결·연결 중 / 승인 대기 / 승인 필요 / 갱신 후 연결 / 연결)은 여기서 하고 결과를 돌려줌
+    @discardableResult
+    func connect() -> ConnectStart {
+        guard !isConnected, !isConnecting else { return .busy }
         updateAuthAction()
-        guard authAction != .needAuthorize, let session else { return }   // 컨트롤러가 먼저 걸러 냄 (방어)
+        guard authAction != .needAuthorize, let session else {
+            return isActive(authorizing, within: authorizeWait) ? .authorizing : .needAuthorize
+        }
         isConnecting = true
         userDisconnectReason = nil
         attempt += 1
@@ -199,10 +270,15 @@ final class SpotifyRemote: NSObject, ObservableObject {
         startTimeout(for: current)
         if authAction == .renew {
             renewingFor = current
-            sessionManager.renewSession()
-        } else {
-            connectAppRemote(token: session.accessToken)
+            // 이전 시도가 보낸 갱신이 아직 진행 중이면 다시 부르지 않고 그 결과를 기다림
+            if !isActive(renewing, within: renewStaleAfter) {
+                renewing = Pending(generation: generation, startedAt: Self.now)
+                sessionManager.renewSession()
+            }
+            return .started(renewing: true)
         }
+        connectAppRemote(token: session.accessToken)
+        return .started(renewing: false)
     }
 
     private func connectAppRemote(token: String) {
@@ -214,14 +290,20 @@ final class SpotifyRemote: NSObject, ObservableObject {
     /// 연결 시도 중에 불리면, 나중에 연결이 성공해도 didConnect에서 바로 끊음
     func disconnect(reason: String = "정지") {
         guard isConnected || isConnecting else { return }
+        if renewingFor != nil {
+            // 세션 갱신을 기다리던 중 → SDK에 연결을 요청하기 전이라 끊김 콜백이 오지 않음. 시도만 끝냄
+            endAttempt()
+            return
+        }
         userDisconnectReason = reason
         endAttempt()
         if isConnected { appRemote.disconnect() }
     }
 
-    /// 연결 시도 상태를 끝냄 (성공·실패·시간 초과·끊기)
+    /// 연결 시도 상태를 끝냄 (성공·실패·시간 초과·끊기). 갱신을 기다리던 시도 표시도 지움
     private func endAttempt() {
         isConnecting = false
+        renewingFor = nil
         timeoutTask?.cancel()
         timeoutTask = nil
     }

@@ -52,16 +52,6 @@ final class SpotifyAuth: ObservableObject {
         return Set(SpotifyConfig.scopes).isSubset(of: granted)
     }
 
-    /// 마지막 토큰 응답(로그인·갱신)의 `scope` 필드 = 토큰이 실제로 가진 권한. 아직 응답이 없으면 nil
-    /// ⚠️ 메모리에만 둠 (키체인·UserDefaults에 저장하지 않음, 작업 025 검토 1차 리뷰)
-    private(set) var tokenScopes: Set<String>?
-
-    /// 지금 들고 있는 액세스 토큰의 남은 유효 시간(초). 토큰이 아직 없으면 nil (값 자체는 노출하지 않음)
-    var accessTokenRemaining: TimeInterval? {
-        guard accessToken != nil else { return nil }
-        return expiresAt.timeIntervalSinceNow
-    }
-
     // MARK: - 로그인
 
     /// 브라우저로 열 Spotify 로그인 주소
@@ -113,7 +103,6 @@ final class SpotifyAuth: ObservableObject {
         accessToken = nil
         refreshToken = nil
         expiresAt = .distantPast
-        tokenScopes = nil
         Keychain.delete(Self.refreshTokenKey)
         UserDefaults.standard.removeObject(forKey: Self.grantedScopesKey)
         isLoggedIn = false
@@ -167,14 +156,10 @@ final class SpotifyAuth: ObservableObject {
             let access_token: String
             let expires_in: Int
             let refresh_token: String?
-            let scope: String?   // 공백으로 구분된 실제 권한 목록
         }
         let token = try JSONDecoder().decode(TokenResponse.self, from: data)
         accessToken = token.access_token
         expiresAt = Date().addingTimeInterval(TimeInterval(token.expires_in))
-        if let scope = token.scope {   // 응답에 scope가 없으면 이전 값 유지 (모르는 것 ≠ 권한 없음)
-            tokenScopes = Set(scope.split(separator: " ").map(String.init))
-        }
         if let newRefresh = token.refresh_token {   // Spotify가 새 리프레시 토큰을 줄 때마다 교체
             refreshToken = newRefresh
             Keychain.save(newRefresh, for: Self.refreshTokenKey)
