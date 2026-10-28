@@ -31,5 +31,8 @@
       }
     ]
   },
-  "plansDirectory": "docs/plan"
+  "plansDirectory": "docs/plan",
+  "attribution": {
+    "sessionUrl": false
+  }
 }
