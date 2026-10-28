@@ -55,10 +55,12 @@ final class ExperimentController: ObservableObject {
     private var lineTask: Task<Void, Never>?
 
     // 다음 곡 가사 미리 받기 (작업 021)
-    private var prefetchTask: Task<Void, Never>?    // 가장 최근에 시작한 미리 받기
-    private var prefetchKey: String?                // 그 미리 받기가 받는 곡의 key (대기열 조회가 끝나야 정해짐)
-    private var prefetchID = 0                      // 더 새 미리 받기가 시작됐는지 구분용
-    private var prefetchedKeys: [String] = []       // 최근에 미리 받기를 시도한 곡 key (최대 LyricsPrefetch.memory개)
+    private var prefetchTasks: [Int: Task<Void, Never>] = [:]   // 진행 중인 미리 받기 전체 (번호별) — 정지할 때 모두 취소
+    private var prefetchingKeys: [String: Int] = [:]            // 대기열 조회가 끝나 받을 곡이 정해진 미리 받기 (곡 key → 번호)
+    private var prefetchID = 0                                  // 미리 받기 번호
+    private var prefetchStartedFor: String?                     // 미리 받기를 이미 시작한 현재 곡 key (곡당 대기열 조회 1번)
+    private var lyricsSettledKey: String?                       // 가사 처리(저장본·검색·연주곡)가 끝난 현재 곡 key
+    private var prefetchedKeys: [String] = []                   // 최근에 미리 받기를 시도한 곡 key (최대 LyricsPrefetch.memory개)
 
     // 재생이 멈춘 뒤 이 시간이 지나면 위치 추적을 끔 (배터리 절약)
     private let idleGrace: TimeInterval = 180
@@ -244,6 +246,7 @@ final class ExperimentController: ObservableObject {
         spotifyWaitTask?.cancel()
         spotifyWaitTask = nil
         resetLyrics()
+        cancelPrefetches()
         idleTask?.cancel()
         idleTask = nil
         idleNoticeShown = false
@@ -359,6 +362,9 @@ final class ExperimentController: ObservableObject {
         // 곡이 바뀌면 새 가사를 찾음
         if np?.key != lyricsKey {
             if let np { loadLyrics(for: np) } else { resetLyrics() }
+        } else if let np, np.isPlaying, lyricsSettledKey == np.key {
+            // 일시정지 상태로 처음 본 곡을 재생하기 시작했으면 그때 다음 곡 미리 받기 (곡당 1번은 안에서 막음, 작업 021 리뷰)
+            startPrefetchIfNeeded(after: np.key)
         }
 
         let state = makeState(np)
@@ -759,6 +765,13 @@ final class ExperimentController: ObservableObject {
         lyrics = []
         lyricsKind = .none
         lyricsKey = nil
+        lyricsSettledKey = nil
+    }
+
+    /// 이 곡(key)의 가사 처리가 끝남 → 재생 중이면 다음 곡 미리 받기 (재생 중이 아니면 재생이 시작될 때 didUpdate가 다시 부름)
+    private func lyricsSettled(_ key: String) {
+        lyricsSettledKey = key
+        startPrefetchIfNeeded(after: key)
     }
 
     /// 곡이 바뀔 때 1번만 조회. 저장된 싱크 가사는 바로 적용하고, 없으면 Task에서 검색 (작업 021)
@@ -771,7 +784,7 @@ final class ExperimentController: ObservableObject {
         if InstrumentalTitle.matches(np.title) {
             lyricsKind = .instrumental
             log("🎼 연주곡 (제목으로 판단): \(np.title)")
-            startPrefetchIfNeeded(after: key)
+            lyricsSettled(key)
             return
         }
 
@@ -779,24 +792,25 @@ final class ExperimentController: ObservableObject {
         if let saved = LyricsStore.loadSynced(title: np.title, artist: np.artist) {
             apply(saved, for: np, save: false)
             log("💾 저장된 싱크 가사 사용 (\(saved.lines.count)줄)")
-            startPrefetchIfNeeded(after: key)
+            lyricsSettled(key)
             return
         }
 
-        // 이 곡을 미리 받는 중이면 새로 검색하지 않고 그 작업이 끝나길 기다림 (작업 021)
-        let pending = prefetchKey == key ? prefetchTask : nil
+        // 이 곡을 미리 받는 중이면(앞선 어느 곡에서 시작했든) 새로 검색하지 않고 그 작업이 끝나길 기다림 (작업 021)
+        let pending = prefetchingKeys[key].flatMap { prefetchTasks[$0] }
         if pending != nil { log("⏳ 미리 받는 중인 가사를 기다려요: \(np.artist) - \(np.title)") }
 
         lyricsTask = Task {
+            var result: LyricsResult?
+            var fromNetwork = false
+
             if let pending {
                 await pending.value
                 guard !Task.isCancelled, lyricsKey == key else { return }
             }
-            var result: LyricsResult?
-            var fromNetwork = false
 
-            if let saved = LyricsStore.loadSynced(title: np.title, artist: np.artist) {
-                // 이미 저장해 둔 싱크 가사가 있으면 인터넷 조회 없이 사용 (미리 받기가 방금 저장한 경우)
+            if pending != nil, let saved = LyricsStore.loadSynced(title: np.title, artist: np.artist) {
+                // 기다린 미리 받기가 방금 싱크 가사를 저장했으면 인터넷 조회 없이 사용 (기다리지 않았으면 위에서 이미 확인함)
                 result = saved
                 log("💾 저장된 싱크 가사 사용 (\(saved.lines.count)줄)")
             } else if let skipped = resultFromSearchRecord(for: np) {
@@ -829,27 +843,39 @@ final class ExperimentController: ObservableObject {
                 sendCard(makeState(current), key: key, reason: reason)
                 scheduleNextLine()
             }
-            startPrefetchIfNeeded(after: key)
+            lyricsSettled(key)
         }
     }
 
     // MARK: - 다음 곡 가사 미리 받기 (작업 021)
 
     /// 현재 곡(key)의 가사 처리가 끝난 뒤 1번: 재생 중이고 카드가 있으면 대기열 다음 곡의 가사를 미리 받아 저장
+    /// 곡당 1번만 (prefetchStartedFor). 일시정지 상태로 처음 본 곡은 재생이 시작될 때 didUpdate가 다시 부름
     /// 앞서 시작한 미리 받기(다른 곡)가 아직 진행 중이어도 취소하지 않음 — 그 결과는 저장만 됨
     private func startPrefetchIfNeeded(after key: String) {
-        guard isRunning, activity != nil, lyricsKey == key,
+        guard isRunning, activity != nil, lyricsKey == key, prefetchStartedFor != key,
               let current = nowPlaying.current, current.key == key, current.isPlaying else { return }
+        prefetchStartedFor = key
         prefetchID += 1
         let id = prefetchID
-        prefetchKey = nil
-        prefetchTask = Task {
+        prefetchTasks[id] = Task {
             await prefetchNext(currentKey: key, id: id)
-            if prefetchID == id {
-                prefetchTask = nil
-                prefetchKey = nil
-            }
+            prefetchTasks[id] = nil
+            prefetchingKeys = prefetchingKeys.filter { $0.value != id }
         }
+    }
+
+    /// 정지할 때: 진행 중인 미리 받기를 모두 취소하고 상태를 비움 (정지 뒤 Spotify·LRCLIB 호출 방지, 작업 021 리뷰)
+    private func cancelPrefetches() {
+        for task in prefetchTasks.values { task.cancel() }
+        prefetchTasks = [:]
+        prefetchingKeys = [:]
+        prefetchStartedFor = nil
+    }
+
+    /// 미리 받기를 시도한 곡 목록에서 뺌 (검색하지 못했으면 다음에 다시 미리 받을 수 있게)
+    private func forgetPrefetched(_ key: String) {
+        prefetchedKeys.removeAll { $0 == key }
     }
 
     /// 대기열 다음 곡 1곡의 가사를 LRCLIB에서 받아 저장·검색 기록만 남김 (현재 곡 상태·카드는 건드리지 않음)
@@ -858,26 +884,32 @@ final class ExperimentController: ObservableObject {
         let next: QueuedTrack?
         do {
             next = try await api.nextInQueue()
-        } catch SpotifyAPIError.blocked {
+        } catch SpotifyAPIError.blocked(let until, let body) {
             log("⚠️ 다음 곡 미리 받기 실패: Spotify 한도 차단 중")
+            // 대기열 조회가 처음으로 큰 429를 맞았으면(body 있음) 폴링과 같은 한도 차단 처리 (호출 수·응답 본문 로그, 카드 안내)
+            if body != nil { handleQuotaBlock(until: until, body: body) }
             return
         } catch SpotifyAPIError.rateLimited {
             log("⚠️ 다음 곡 미리 받기 실패: Spotify 호출 한도 초과")
             return
         } catch {
+            if Task.isCancelled { return }   // 정지로 취소됨
             log("⚠️ 다음 곡 미리 받기 실패: 다음 곡 조회 오류 — \(error.localizedDescription)")
             return
         }
+        guard !Task.isCancelled else { return }   // 정지됨 → 검색하지 않음
         guard let next else {
             log("⏭ 다음 곡 미리 받기 생략 — 대기열에 다음 곡이 없거나 곡이 아님")
             return
         }
-        guard LyricsPrefetch.shouldPrefetch(nextKey: next.key, currentKey: currentKey, tried: Set(prefetchedKeys)) else { return }
+        // 대기열 조회 사이에 그 곡이 이미 재생돼 loadLyrics가 맡았으면 이중 검색하지 않음 (작업 021 리뷰)
+        guard next.key != lyricsKey,
+              LyricsPrefetch.shouldPrefetch(nextKey: next.key, currentKey: currentKey, tried: Set(prefetchedKeys)) else { return }
         prefetchedKeys.append(next.key)
         if prefetchedKeys.count > LyricsPrefetch.memory {
             prefetchedKeys.removeFirst(prefetchedKeys.count - LyricsPrefetch.memory)
         }
-        if prefetchID == id { prefetchKey = next.key }   // 이 곡이 재생되면 loadLyrics가 이 작업을 기다림
+        prefetchingKeys[next.key] = id   // 이 곡이 재생되면 loadLyrics가 이 작업을 기다림
 
         // 검색할 필요가 없는 곡: 연주곡 제목, 저장된 싱크 가사, 신선한 검색 기록
         if InstrumentalTitle.matches(next.title)
@@ -891,6 +923,8 @@ final class ExperimentController: ObservableObject {
             result = try await LyricsService.find(
                 title: next.title, artist: next.artist, album: next.album, duration: next.duration, fast: false)
         } catch {
+            forgetPrefetched(next.key)   // 검색하지 못한 곡은 다음에 다시 미리 받을 수 있게 (재시도는 하지 않음)
+            if Task.isCancelled { return }   // 정지로 취소됨
             log("⚠️ 다음 곡 미리 받기 실패: \(next.artist) - \(next.title) — \(error.localizedDescription)")
             return
         }

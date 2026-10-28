@@ -456,7 +456,12 @@ nonisolated enum LyricsService {
             guard tried.insert(search.title + "\n" + search.artist).inserted else { continue }
             let response: Data?
             if index == 0, let earlySearch {
-                response = try await earlySearch.value   // fast: 미리 보낸 2단계 결과
+                // fast: 미리 보낸 2단계 결과. 기다리는 쪽이 취소되면 미리 보낸 요청도 바로 취소 (Task.value는 취소를 넘겨주지 않음)
+                response = try await withTaskCancellationHandler {
+                    try await earlySearch.value
+                } onCancel: {
+                    earlySearch.cancel()
+                }
             } else {
                 response = try await request("search", ["track_name": search.title, "artist_name": search.artist])
             }

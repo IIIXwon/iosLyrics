@@ -20,7 +20,19 @@ struct NowPlaying: Equatable {
     /// 지금 재생 위치 (초)
     func position(at now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> TimeInterval {
         guard isPlaying else { return progress }
-        return min(duration, max(0, progress + (now - stamp)))
+        return min(duration, max(0, estimatedPosition(at: now)))
+    }
+
+    /// 곡 끝까지 남은 시간(초). 곡 길이로 자르지 않아서 끝났으면 음수 (PollTiming.wait에 넘김, 작업 021)
+    /// 재생 중이 아니거나 곡 길이를 모르면(0 이하) nil
+    func remaining(at now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> TimeInterval? {
+        guard isPlaying, duration > 0 else { return nil }
+        return duration - estimatedPosition(at: now)
+    }
+
+    /// 마지막으로 받은 위치 + 경과 시간 (자르지 않은 값)
+    private func estimatedPosition(at now: TimeInterval) -> TimeInterval {
+        progress + (now - stamp)
     }
 }
 
@@ -137,7 +149,7 @@ final class NowPlayingService: ObservableObject {
     private func loop() async {
         while !Task.isCancelled {
             var wait = interval
-            var rateLimited = false
+            var polled = false   // 이번 회차 조회가 성공했는지 (곡 끝 대기는 성공한 회차에만 적용)
             do {
                 let t0 = uptime
                 let result = try await api.currentlyPlaying()
@@ -145,6 +157,7 @@ final class NowPlayingService: ObservableObject {
                 pollCount += 1
                 handle(result, stamp: (t0 + t1) / 2)   // 요청~응답 중간 시점을 기준으로
                 wait = nextInterval()
+                polled = true
             } catch is CancellationError {
                 break
             } catch SpotifyAPIError.blocked(let until, let body) {
@@ -158,7 +171,6 @@ final class NowPlayingService: ObservableObject {
                 status = "호출 한도 초과"
                 onLog?("⚠️ 호출 한도 초과 — \(Int(after))초 대기 \(body.isEmpty ? "" : "· \(body)")")
                 wait = max(after, interval)
-                rateLimited = true
             } catch {
                 if (error as? URLError)?.code == .cancelled { break }
                 status = "오류"
@@ -167,13 +179,9 @@ final class NowPlayingService: ObservableObject {
             }
 
             // 곡이 곧 끝나면 그 직후에 바로 다시 조회하고, 끝났는데 Spotify가 아직 같은 곡을 주면 잠깐 1초 간격으로 다시 봄 (작업 021)
-            // 남은 시간은 곡 길이로 자르지 않은 값 (끝났으면 음수). 429로 기다리는 중이면 줄이지 않음
-            if !rateLimited {
-                let remaining = current.flatMap { c -> TimeInterval? in
-                    guard c.isPlaying else { return nil }
-                    return c.duration - (c.progress + (uptime - c.stamp))
-                }
-                wait = PollTiming.wait(base: wait, remaining: remaining)
+            // 남은 시간은 곡 길이로 자르지 않은 값 (끝났으면 음수). 조회가 실패한 회차(429 대기·오류 백오프)는 줄이지 않음
+            if polled {
+                wait = PollTiming.wait(base: wait, remaining: current?.remaining(at: uptime))
             }
             try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
         }
