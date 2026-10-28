@@ -68,5 +68,16 @@ struct LockScreenLyricsView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
         .padding(.horizontal, 16)
+        // 전주·간주 끝 3초: 왼쪽 위에 3·2·1 (작업 020). overlay라 가사 줄 위치·크기는 그대로
+        .overlay(alignment: .topLeading) {
+            if state.countdown > 0 {
+                Text("\(state.countdown)")
+                    .font(.caption.bold())
+                    .monospacedDigit()
+                    .foregroundStyle(.white.opacity(0.7))
+                    .padding(.top, 10)
+                    .padding(.leading, 14)
+            }
+        }
     }
 }

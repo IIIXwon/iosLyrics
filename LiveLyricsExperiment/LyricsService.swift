@@ -106,6 +106,46 @@ nonisolated enum LRCParser {
     }
 }
 
+/// 전주·간주 끝 3초 동안 카드에 보일 3·2·1 (작업 020)
+nonisolated enum LyricCountdown {
+    /// 숫자를 보이는 시간(초) — 다음 줄 직전 3초
+    static let seconds: TimeInterval = 3
+    /// 전주(첫 줄 전) 최소 길이. 첫 줄이 이보다 빨리 나오면 숫자 없음
+    static let introMinimum: TimeInterval = 5
+    /// 간주(빈 줄 ~ 다음 줄) 최소 길이
+    static let interludeMinimum: TimeInterval = 8
+
+    /// 지금 위치에서 보일 숫자 (3·2·1). 안 보이면 0
+    static func value(_ lines: [LyricLine], at position: TimeInterval) -> Int {
+        guard let target = countdownTarget(lines, at: position) else { return 0 }
+        let remaining = target - position
+        guard remaining > 0, remaining <= seconds else { return 0 }
+        return Int(remaining.rounded(.up))   // 3.0 → 3, 2.5 → 3, 0.5 → 1
+    }
+
+    /// 숫자가 다음에 바뀌는 위치(초). 다음 변화가 줄 바뀜이거나 카운트다운 구간이 아니면 nil
+    static func nextChange(_ lines: [LyricLine], at position: TimeInterval) -> TimeInterval? {
+        guard let target = countdownTarget(lines, at: position) else { return nil }
+        let shown = value(lines, at: position)
+        if shown == 0 { return target - seconds }   // 아직 숫자 전 → 3이 나타나는 시각
+        if shown == 1 { return nil }                // 1 다음은 줄 바뀜 (기존 예약이 처리)
+        return target - TimeInterval(shown - 1)     // 3 → 2, 2 → 1로 바뀌는 시각
+    }
+
+    /// 지금이 카운트다운 대상 구간(긴 전주·긴 간주)이면 다음 줄 시각, 아니면 nil
+    private static func countdownTarget(_ lines: [LyricLine], at position: TimeInterval) -> TimeInterval? {
+        guard let first = lines.first else { return nil }
+        guard let index = lines.lastIndex(where: { $0.time <= position }) else {
+            // 전주: 0초 ~ 첫 줄
+            return first.time >= introMinimum ? first.time : nil
+        }
+        // 간주: 현재 줄이 빈 줄(카드에 ♪)이고 다음 줄까지 충분히 길 때
+        guard lines[index].text.isEmpty, lines.indices.contains(index + 1) else { return nil }
+        let next = lines[index + 1].time
+        return next - lines[index].time >= interludeMinimum ? next : nil
+    }
+}
+
 /// 로그에 상태 코드가 보이도록 (예: HTTP 503)
 nonisolated enum LyricsError: LocalizedError {
     case http(Int)
