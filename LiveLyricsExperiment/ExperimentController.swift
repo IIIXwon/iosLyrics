@@ -43,7 +43,8 @@ final class ExperimentController: ObservableObject {
     private var remoteLastAttempt: TimeInterval?   // 마지막 연결 시도 시각 (기기 가동 시간 기준)
     private var remoteLastFailure: String?          // 마지막 실패 키(domain+code). 같은 키의 실패 로그를 연속으로 남기지 않으려고
     private var remoteAttemptCount = 0               // SDK 연결 시도 번호 (진단 로그용, 025 검토 1차). 추적 세션마다 0부터
-    private var remoteScopeWarned = false            // "app-remote-control 권한 없음" 경고를 이미 남겼는지
+    private var remoteAuthWarned = false             // "Spotify 앱 연결 필요" 안내를 이번 세션에 이미 남겼는지 (검토 2차)
+    private var remoteAttemptAppState: String?       // 마지막 연결 시도 때의 앱 상태 (실패 줄에 씀 — 실패 시점 상태와 혼동 방지)
     private var remoteLastOutcome: String?           // 직전 시도 결과: "성공" 또는 실패 키 (백그라운드 시도 줄을 남길지 판단용)
     private var remoteBackgroundLogged = false       // 이번 세션에 백그라운드 시도 줄을 남긴 적 있는지
     private var remoteOutcomeAtBackgroundLog: String? // 마지막으로 백그라운드 시도 줄을 남길 때의 직전 결과
@@ -90,7 +91,7 @@ final class ExperimentController: ObservableObject {
     private init() {
         api = SpotifyAPI(auth: auth)
         nowPlaying = NowPlayingService(api: api)
-        remote = SpotifyRemote(auth: auth)
+        remote = SpotifyRemote()
         readiness = ReadinessModel(auth: auth, location: location)
         // 작업 009의 SDK 실험 스위치 값은 더 이상 쓰지 않으므로 지움 (작업 010)
         UserDefaults.standard.removeObject(forKey: "sdkExperimentEnabled")
@@ -106,6 +107,7 @@ final class ExperimentController: ObservableObject {
         remote.onState = { [weak self] in self?.nowPlaying.applyRemote($0) }
         remote.onConnectionChange = { [weak self] in self?.remoteConnectionChanged($0) }
         remote.onFailure = { [weak self] in self?.remoteConnectFailed($0, key: $1) }
+        remote.onAuthorized = { [weak self] in self?.remoteAuthorized() }
         remote.onLog = { [weak self] in self?.log($0) }
 
         if !SpotifyConfig.isConfigured {
@@ -165,7 +167,8 @@ final class ExperimentController: ObservableObject {
     func logout() {
         if isRunning { stopTracking() }   // 로그아웃은 "사용자가 정지함"으로 치지 않음
         auth.logout()
-        log("👋 로그아웃")
+        remote.clearSession()             // Spotify 앱 승인 세션도 같이 지움 (작업 025 검토 2차)
+        log("👋 로그아웃 (Spotify 앱 연결도 해제)")
         readiness.refresh()
     }
 
@@ -278,7 +281,8 @@ final class ExperimentController: ObservableObject {
         remoteLastAttempt = nil
         remoteLastFailure = nil
         remoteAttemptCount = 0
-        remoteScopeWarned = false
+        remoteAuthWarned = false
+        remoteAttemptAppState = nil
         remoteLastOutcome = nil
         remoteBackgroundLogged = false
         remoteOutcomeAtBackgroundLog = nil
@@ -691,11 +695,16 @@ final class ExperimentController: ObservableObject {
 
     private var spotifyWaitTask: Task<Void, Never>?   // Spotify를 연 뒤 기기가 나타나길 기다리는 중 (하나만)
 
-    /// 앱 주소(livelyrics://…)로 앱이 열렸을 때. open-spotify = 잠금화면 카드 탭
+    /// 앱 주소(livelyrics://…)로 앱이 열렸을 때. open-spotify = 잠금화면 카드 탭, callback = Spotify 앱 승인 후 돌아옴(작업 025 검토 2차)
+    /// Web API 로그인(PKCE)은 ASWebAuthenticationSession이 callback을 직접 받으므로 여기로 오지 않음
+    /// ⚠️ callback 주소에는 승인 코드가 들어 있으므로 주소를 로그에 남기지 않음
     func handleOpenURL(_ url: URL) {
         guard url.scheme == SpotifyConfig.callbackScheme else { return }
         if url.host == "open-spotify" {
             openSpotify()
+        } else if url.host == "callback" {
+            let handled = remote.handleAuthCallback(url)
+            log(handled ? "⚡ Spotify 앱에서 돌아옴 — 승인 확인 중" : "⚠️ Spotify 앱 승인 응답을 알아보지 못했어요")
         } else {
             log("ℹ️ 알 수 없는 앱 주소: \(url.absoluteString)")
         }
@@ -1206,75 +1215,67 @@ final class ExperimentController: ObservableObject {
 
     /// 앱 화면으로 돌아왔을 때 (ContentView의 scenePhase .active). SDK 연결 시점 2
     func appBecameActive() {
+        remote.updateAuthAction()   // [Spotify 앱 연결] 버튼 표시를 지금 세션 상태로 다시 계산
+        tryRemoteConnect(foreground: true)
+    }
+
+    /// [Spotify 앱 연결] 버튼 (작업 025 검토 2차). Spotify 앱으로 넘어가 승인 후 돌아옴. 음악은 재생하지 않음
+    func authorizeRemote() {
+        remote.authorize()
+    }
+
+    /// Spotify 앱 승인이 끝남 → 안내를 다시 남길 수 있게 하고 바로 연결 시도 (화면에서 누른 것이므로 foreground)
+    private func remoteAuthorized() {
+        remoteAuthWarned = false
         tryRemoteConnect(foreground: true)
     }
 
     /// SDK 연결 시도. foreground(추적 시작·화면 복귀)면 항상, 아니면 마지막 시도 후 60초가 지났을 때만 (RemoteRetry)
+    /// 연결 방법은 SDK 승인 세션 기준(RemoteAuthPlan): 연결 / 갱신 후 연결(SpotifyRemote가 처리) / 승인 필요 → 시도하지 않음
     private func tryRemoteConnect(foreground: Bool) {
         guard isRunning, auth.isLoggedIn, !remote.isConnected, !remote.isConnecting else { return }
         let now = ProcessInfo.processInfo.systemUptime
         guard RemoteRetry.shouldTry(now: now, lastAttempt: remoteLastAttempt, foreground: foreground) else { return }
-        remoteLastAttempt = now   // 권한 부족으로 막혀도 다음 백그라운드 확인은 60초 뒤
-        // 권한이 없으면 연결해도 실패하므로 시도하지 않음 (경고는 1번만)
-        if let reason = remoteScopeBlockReason() {
-            if !remoteScopeWarned {
-                remoteScopeWarned = true
-                log("⚠️ SDK 연결 불가 — 다시 로그인 필요 (\(reason))")
+        remoteLastAttempt = now   // 승인이 없어 막혀도 다음 백그라운드 확인은 60초 뒤
+        remote.updateAuthAction()
+        // 승인 세션이 없거나 갱신할 수 없으면 연결해도 실패하므로 시도하지 않음 (안내는 세션당 1번)
+        if remote.authAction == .needAuthorize {
+            if !remoteAuthWarned {
+                remoteAuthWarned = true
+                log("⚡ Spotify 앱 연결 필요 — 앱에서 [Spotify 앱 연결]을 눌러 주세요")
             }
             return
         }
-        remoteScopeWarned = false
+        remoteAuthWarned = false
         remoteAttemptCount += 1
+        remoteAttemptAppState = appStateName()
         // 앱 화면 시도는 항상, 백그라운드 시도는 세션 첫 번째이거나 직전 결과가 바뀌었을 때만 줄을 남김
         if foreground || !remoteBackgroundLogged || remoteLastOutcome != remoteOutcomeAtBackgroundLog {
             if !foreground {
                 remoteBackgroundLogged = true
                 remoteOutcomeAtBackgroundLog = remoteLastOutcome
             }
-            log("⚡ SDK 연결 시도 #\(remoteAttemptCount) (\(appStateName())) — \(remoteDiagnostics())")
+            log("⚡ SDK 연결 시도 #\(remoteAttemptCount) (\(remoteAttemptAppState ?? appStateName())) — \(remoteDiagnostics())")
         }
         remote.connect()
     }
 
-    private static let remoteScope = "app-remote-control"
-
-    /// SDK 연결을 막을 권한 문제 (없으면 nil)
-    /// - 토큰 응답의 실제 scope를 알면 그것만 봄
-    /// - 아직 모르면(토큰 응답 전) 로그인 때 요청한 권한 기준의 `needsRelogin`으로 판단
-    private func remoteScopeBlockReason() -> String? {
-        if let scopes = auth.tokenScopes {
-            return scopes.contains(Self.remoteScope) ? nil : "토큰에 \(Self.remoteScope) 권한 없음"
-        }
-        return auth.needsRelogin ? "로그인 때 받은 권한이 부족" : nil
+    /// SDK 승인 세션의 남은 시간 한 줄. ⚠️ 세션·토큰 값은 넣지 않음 (있음/없음·남은 시간만)
+    private func remoteSessionText() -> String {
+        guard remote.hasSession, let seconds = remote.sessionRemaining else { return "세션 없음" }
+        if seconds <= RemoteAuthPlan.renewMargin { return "세션 있음, 남은 유효 곧 만료(연결 전 갱신)" }
+        return "세션 있음, 남은 유효 \(Int(seconds / 60))분"
     }
 
-    /// 지금 토큰의 실제 권한에 app-remote-control이 있는지 한 줄로. ⚠️ 토큰 값은 넣지 않음 (권한 유무만)
-    private func remoteScopeText(unknown: String = "모름") -> String {
-        let state: String
-        if let scopes = auth.tokenScopes {
-            state = scopes.contains(Self.remoteScope) ? "있음" : "없음"
-        } else {
-            state = unknown
-        }
-        return "토큰 scope \(Self.remoteScope) \(state)"
-    }
-
-    /// 연결 시도 줄의 진단 정보. ⚠️ 토큰 값은 절대 넣지 않음 (권한 유무·남은 시간만)
+    /// 연결 시도 줄의 진단 정보. ⚠️ 토큰·세션 값은 절대 넣지 않음 (있음/없음·남은 시간만)
     private func remoteDiagnostics() -> String {
-        let scope = remoteScopeText(unknown: "모름(아직 토큰 응답 없음)")
-        let remaining: String
-        if let seconds = auth.accessTokenRemaining {
-            remaining = seconds < 60 ? "남은 유효 곧 만료(연결 때 갱신)" : "남은 유효 \(Int(seconds / 60))분"
-        } else {
-            remaining = "남은 유효 없음(연결 때 새로 받음)"
-        }
         let playback: String
         if let np = nowPlaying.current {
             playback = np.isPlaying ? "재생 중" : "일시정지"
         } else {
             playback = "없음"
         }
-        return "\(scope), \(remaining), Web API 재생 상태 \(playback)"
+        return "\(remoteSessionText()), Web API 재생 상태 \(playback)"
     }
 
     private func remoteConnectionChanged(_ connected: Bool) {
@@ -1282,7 +1283,7 @@ final class ExperimentController: ObservableObject {
         if connected {
             remoteLastFailure = nil
             remoteLastOutcome = "성공"
-            log("⚡ SDK 연결됨 — 폴링 완화(재생 중 \(Int(PollTiming.connectedPlaying))초) · \(remoteScopeText())")
+            log("⚡ SDK 연결됨 — 폴링 완화(재생 중 \(Int(PollTiming.connectedPlaying))초) · \(remoteSessionText())")
         } else if remote.lastDisconnectByUser {
             // 정지·강제 종료로 우리가 끊은 경우 (폴링도 함께 멈추므로 "3초 폴링 복귀"가 아님)
             log("⚡ SDK 연결 끊음 (\(remote.lastError ?? "정지"))")
@@ -1291,12 +1292,17 @@ final class ExperimentController: ObservableObject {
         }
     }
 
-    /// 연결 실패 로그는 같은 실패(키 = 오류 domain+code, 토큰 단계는 "토큰"+HTTP 상태)가 연속이면 1번만. 문구는 상세 그대로
+    /// 연결 실패 로그. 같은 실패(키 = `domain=… code=…`, 세션 갱신 단계는 앞에 "세션 갱신")가 연속이면 상세 대신 짧은 줄 (검토 2차)
+    /// 앱 상태는 실패 시점이 아니라 **시도할 때**의 상태 (전환 중→앱 화면 혼동 방지)
     private func remoteConnectFailed(_ reason: String, key: String) {
         remoteLastOutcome = key
-        guard key != remoteLastFailure else { return }
+        let state = remoteAttemptAppState ?? appStateName()
+        if key == remoteLastFailure {
+            log("⚡ SDK 연결 실패 #\(remoteAttemptCount): 같은 오류 반복 (\(key)) (\(state))")
+            return
+        }
         remoteLastFailure = key
-        log("⚡ SDK 연결 실패 #\(remoteAttemptCount): \(reason) (\(appStateName())) · \(remoteScopeText())")
+        log("⚡ SDK 연결 실패 #\(remoteAttemptCount): \(reason) (\(state)) · \(remoteSessionText())")
     }
 
     // MARK: - 로그
