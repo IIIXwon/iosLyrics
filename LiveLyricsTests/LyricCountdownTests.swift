@@ -178,4 +178,46 @@ struct LyricCountdownTests {
         #expect(LyricCountdown.interludeMinimum == 8)
         #expect(LyricCountdown.seconds == 3)
     }
+
+    // 16 (리뷰 1차)
+    @Test func 카운트다운값_빈줄이이어지면_다음글자줄기준으로_센다() {
+        // given
+        let l = lines([(10, "A"), (12, ""), (20, ""), (30, "B")])
+        // when
+        let a = LyricCountdown.value(l, at: 17.5)
+        let b = LyricCountdown.value(l, at: 27.5)
+        // then
+        #expect(a == 0)
+        #expect(b == 3)
+    }
+
+    // 17 (리뷰 1차)
+    @Test func 다음변화_빈줄이이어지면_다음글자줄3초전() {
+        // given
+        let l = lines([(10, "A"), (12, ""), (20, ""), (30, "B")])
+        // when
+        let n = LyricCountdown.nextChange(l, at: 14)
+        // then
+        #expect(n == 27.0)
+    }
+
+    // 18 (리뷰 1차)
+    @Test func 카운트다운값_빈줄로시작하면_전주로보고_센다() {
+        // given
+        let l = lines([(0, ""), (6, "A")])
+        // when
+        let v = LyricCountdown.value(l, at: 3.5)
+        // then
+        #expect(v == 3)
+    }
+
+    // 19 (리뷰 1차)
+    @Test func 카운트다운값_빈줄로시작해도_전주5초미만이면_0() {
+        // given
+        let l = lines([(0, ""), (4, "A")])
+        // when
+        let v = LyricCountdown.value(l, at: 2.0)
+        // then
+        #expect(v == 0)
+    }
 }
