@@ -18,7 +18,7 @@ Spotify에서 재생 중인 곡의 **싱크 가사를 아이폰 잠금화면(Liv
 | 파일 | 하는 일 |
 |---|---|
 | `LiveLyricsExperimentApp.swift` | 진입점, `ExperimentController`를 environmentObject로 주입 |
-| `ContentView.swift` | 로그인, 현재 재생, 시작/정지, 로그 화면 |
+| `ContentView.swift` | 준비 상태, 로그인, 싱크 보정, 시작/정지, 저장된 가사, 개발자 메뉴(로그·조회 설정) |
 | `ExperimentController.swift` | 전체 조율: Live Activity 시작·갱신·종료, 로그 |
 | `LyricsService.swift` | LRCLIB 4단계 검색 + LRC 파싱 + 현재 줄 계산 + 앱 전용 저장 폴더(`LyricsStore`: `synced/`·`plain/`) |
 | `LocationKeepAlive.swift` | 백그라운드 유지용 저전력 위치 추적 |

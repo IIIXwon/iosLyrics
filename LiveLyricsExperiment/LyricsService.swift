@@ -315,13 +315,6 @@ nonisolated enum LyricsStore {
             saveSearchLog(log)
         }
     }
-
-    /// 현재 곡의 저장본(synced·plain)과 검색 기록을 모두 지움 ([가사 다시 찾기])
-    static func deleteAll(title: String, artist: String) {
-        let name = fileName(title: title, artist: artist)
-        delete(.synced, name: name)
-        delete(.plain, name: name)
-    }
 }
 
 // MARK: - LRCLIB 검색
