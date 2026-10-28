@@ -95,8 +95,9 @@ private struct DeveloperMenuView: View {
                         Text(mode.label).tag(mode)
                     }
                 }
+                .disabled(controller.isRunning)   // 추적 중에 바뀌면 로그와 실제 방식이 어긋나므로 잠금 (리뷰 반영)
             } footer: {
-                Text("바꾸면 다음 [시작]부터 적용돼요. 지금 추적 중이면 [정지] → [시작]을 눌러 주세요.")
+                Text("바꾸면 다음 [시작]부터 적용돼요. 추적 중에는 바꿀 수 없으니 [정지] 후 바꾸고 [시작]을 눌러 주세요.")
             }
 
             // 부모가 다시 그려질 때(로그 추가 등) 값을 새로 계산해 넘김 → 메뉴를 열어 둔 동안에도 숫자가 갱신됨

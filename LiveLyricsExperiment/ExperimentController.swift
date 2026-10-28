@@ -207,7 +207,9 @@ final class ExperimentController: ObservableObject {
         quotaNoticeText = nil
         lastPollAt = nil
         trackingMode = cardVisibilityMode
-        firstLyricsAlertSent = false
+        // 새 카드를 만들 때만 시작 알림을 다시 보낼 수 있게 함. 기존 카드를 이어받을 때(앱 재실행)는
+        // 이미 알림을 보낸 카드로 보고 다시 울리지 않음 (리뷰 반영)
+        firstLyricsAlertSent = (existing != nil)
         log("🪪 카드 표시 실험: \(trackingMode.label)")
         if auth.needsRelogin {
             log("⚠️ 카드 ▶︎ 버튼(재생 제어)용 새 권한이 필요해요 → 로그아웃 후 Spotify에 다시 로그인")
@@ -938,6 +940,7 @@ final class ExperimentController: ObservableObject {
         lyricsKind == .synced && !lyrics.isEmpty && quotaNoticeText == nil
             && !idleNoticeShown && (noticeUntil.map { Date() >= $0 } ?? true)
             && !state.current.isEmpty
+            && state.isPlaying   // 일시정지 중엔 알림을 쓰지 않음 (재생 중일 때만 1회 알림, 리뷰 반영)
     }
 
     /// 카드 상태 변화(활성·종료·사라짐 등)를 로그로 남김 — 시작 직후 iOS가 카드를 어떻게 다루는지 확인용 (작업 019)
