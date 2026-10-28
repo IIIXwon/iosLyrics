@@ -30,6 +30,11 @@ final class ExperimentController: ObservableObject {
         }
     }
 
+    /// 카드 표시 실험 방식 (작업 019). 개발자 메뉴에서 바꾸면 다음 [시작]부터 적용. 앱을 껐다 켜도 유지
+    @Published var cardVisibilityMode = CardVisibilityMode(stored: UserDefaults.standard.string(forKey: "cardVisibilityMode")) {
+        didSet { UserDefaults.standard.set(cardVisibilityMode.rawValue, forKey: "cardVisibilityMode") }
+    }
+
     let auth = SpotifyAuth()
     let nowPlaying: NowPlayingService
     let location = LocationKeepAlive()
@@ -41,6 +46,11 @@ final class ExperimentController: ObservableObject {
     private var skippedUpdates = 0
     private var lastSent: LyricsActivityAttributes.ContentState?
     private var lastSentKey: String?
+
+    // 카드 표시 실험 (작업 019)
+    private var trackingMode: CardVisibilityMode = .normal          // 이번 추적에 적용 중인 방식 ([시작] 때 고정)
+    private var firstLyricsAlertSent = false                        // 이번 추적에서 시작 알림을 이미 보냈는지 (추적 1회당 최대 1번)
+    private var activityStateTask: Task<Void, Never>?               // 카드 상태 변화(activityStateUpdates) 구독
 
     // 3단계: 현재 곡의 싱크 가사 (없으면 빈 배열)
     private var lyrics: [LyricLine] = []          // 싱크 가사일 때만 채워짐
@@ -196,6 +206,9 @@ final class ExperimentController: ObservableObject {
         noticeUntil = nil
         quotaNoticeText = nil
         lastPollAt = nil
+        trackingMode = cardVisibilityMode
+        firstLyricsAlertSent = false
+        log("🪪 카드 표시 실험: \(trackingMode.label)")
         if auth.needsRelogin {
             log("⚠️ 카드 ▶︎ 버튼(재생 제어)용 새 권한이 필요해요 → 로그아웃 후 Spotify에 다시 로그인")
         }
@@ -207,7 +220,8 @@ final class ExperimentController: ObservableObject {
             do {
                 activity = try Activity.request(
                     attributes: LyricsActivityAttributes(title: "Spotify", artist: ""),
-                    content: ActivityContent(state: makeState(nil), staleDate: nil),
+                    content: ActivityContent(state: makeState(nil), staleDate: nil,
+                                             relevanceScore: trackingMode.relevanceScore),
                     pushType: nil
                 )
                 log("✅ 잠금화면 카드 시작")
@@ -217,6 +231,7 @@ final class ExperimentController: ObservableObject {
                 return false
             }
         }
+        if let activity { watchActivityState(activity) }
 
         isRunning = true
         nowPlaying.start()
@@ -236,6 +251,8 @@ final class ExperimentController: ObservableObject {
         idleTask = nil
         idleNoticeShown = false
         noticeUntil = nil
+        activityStateTask?.cancel()
+        activityStateTask = nil
         let ending = activity
         activity = nil
         Task { await ending?.end(nil, dismissalPolicy: .immediate) }
@@ -905,7 +922,34 @@ final class ExperimentController: ObservableObject {
         lastSentKey = key
         // 가사 줄 변경은 줄마다 쌓이기만 해서 기록하지 않음 (횟수는 계속 셈, 작업 010)
         if reason != "가사 줄 변경" { log("🪪 카드 갱신 #\(activityUpdates) — \(reason)") }
-        return Task { await activity.update(ActivityContent(state: state, staleDate: nil)) }
+        let content = ActivityContent(state: state, staleDate: nil, relevanceScore: trackingMode.relevanceScore)
+        // 시작 알림 실험 (작업 019): 추적 시작 후 처음으로 가사 줄이 있는 카드를 보낼 때 1번만 알림을 붙임
+        if trackingMode.alertsOnFirstLyrics, !firstLyricsAlertSent, isLyricsLineState(state) {
+            firstLyricsAlertSent = true
+            log("🔔 시작 알림 갱신 보냄")
+            let alert = AlertConfiguration(title: "가사 카드", body: "\(state.current)", sound: .default)
+            return Task { await activity.update(content, alertConfiguration: alert) }
+        }
+        return Task { await activity.update(content) }
+    }
+
+    /// 지금 보내는 카드가 "싱크 가사 줄"을 보여 주는지 (안내 문구·한도 차단 안내·전주 구간의 빈 줄은 제외) (작업 019)
+    private func isLyricsLineState(_ state: LyricsActivityAttributes.ContentState) -> Bool {
+        lyricsKind == .synced && !lyrics.isEmpty && quotaNoticeText == nil
+            && !idleNoticeShown && (noticeUntil.map { Date() >= $0 } ?? true)
+            && !state.current.isEmpty
+    }
+
+    /// 카드 상태 변화(활성·종료·사라짐 등)를 로그로 남김 — 시작 직후 iOS가 카드를 어떻게 다루는지 확인용 (작업 019)
+    private func watchActivityState(_ activity: Activity<LyricsActivityAttributes>) {
+        activityStateTask?.cancel()
+        log("🪪 카드 상태: \(activity.activityState)")
+        activityStateTask = Task { [weak self] in
+            for await state in activity.activityStateUpdates {
+                guard !Task.isCancelled else { return }
+                self?.log("🪪 카드 상태: \(state)")
+            }
+        }
     }
 
     /// 이전·현재·다음 줄 중 하나라도 달라졌는지 (같은 줄이 반복돼도 이전·다음 줄이 바뀌면 갱신)

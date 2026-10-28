@@ -88,6 +88,17 @@ private struct DeveloperMenuView: View {
                     .disabled(controller.isRunning || !controller.auth.isLoggedIn)
             }
 
+            // 작업 019: 알림 센터(위에서 쓸어내림)에서 카드가 바로 보이게 하는 실험
+            Section {
+                Picker("카드 표시 실험", selection: $controller.cardVisibilityMode) {
+                    ForEach(CardVisibilityMode.allCases) { mode in
+                        Text(mode.label).tag(mode)
+                    }
+                }
+            } footer: {
+                Text("바꾸면 다음 [시작]부터 적용돼요. 지금 추적 중이면 [정지] → [시작]을 눌러 주세요.")
+            }
+
             // 부모가 다시 그려질 때(로그 추가 등) 값을 새로 계산해 넘김 → 메뉴를 열어 둔 동안에도 숫자가 갱신됨
             Section {
                 UsageRow(title: "오늘", total: APIUsage.total(daysAgo: 0), summary: APIUsage.summary(daysAgo: 0))
