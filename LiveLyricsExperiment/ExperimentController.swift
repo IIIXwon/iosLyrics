@@ -822,21 +822,6 @@ final class ExperimentController: ObservableObject {
         }
     }
 
-    /// [가사 다시 찾기]: 현재 곡의 저장본(synced·plain)과 검색 기록을 지우고 바로 다시 검색 → 카드 갱신
-    func refindLyrics() {
-        guard isRunning, activity != nil, let np = nowPlaying.current else {
-            log("⚠️ 추적 중이고 재생 중인 곡이 있을 때만 가사를 다시 찾을 수 있어요")
-            return
-        }
-        guard !InstrumentalTitle.matches(np.title) else {
-            log("ℹ️ 제목으로 연주곡이라고 판단된 곡이라 가사를 찾지 않아요")
-            return
-        }
-        LyricsStore.deleteAll(title: np.title, artist: np.artist)
-        log("🗑 저장본·검색 기록 삭제 → 가사 다시 찾기: \(np.artist) - \(np.title)")
-        loadLyrics(for: np)
-    }
-
     /// LRCLIB 검색. 일시 오류(서버 5xx·429·네트워크)면 2·5·15·30·60초 간격으로 최대 6번 시도 (작업 012).
     /// 일시 오류가 아니면 바로 멈춤. 끝내 실패하면 nil
     private func searchWithRetry(_ np: NowPlaying, key: String) async -> LyricsResult? {

@@ -1,4 +1,4 @@
-// 앱 타깃 — 메인 화면: 준비 상태, Spotify 로그인, 현재 재생 정보, 싱크 보정, 시작/정지, 저장된 가사
+// 앱 타깃 — 메인 화면: 준비 상태, Spotify 로그인, 싱크 보정, 시작/정지, 저장된 가사
 // 로그·조회 설정은 맨 아래 [개발자 메뉴]로 옮겼어요 (로그 기록은 계속 쌓음)
 import AuthenticationServices
 import SwiftUI
@@ -17,11 +17,6 @@ struct ContentView: View {
                     Task { await controller.login(using: webAuthenticationSession) }
                 } onLogout: {
                     controller.logout()
-                }
-
-                Section("현재 재생") {
-                    NowPlayingView(service: controller.nowPlaying)
-                    RefindLyricsButton(service: controller.nowPlaying)
                 }
 
                 Section {
@@ -221,37 +216,6 @@ private struct ReadinessRow: View {
     }
 }
 
-// MARK: - 현재 재생 정보 (0.5초마다 재생 위치를 다시 계산해서 표시)
-
-private struct NowPlayingView: View {
-    @ObservedObject var service: NowPlayingService
-
-    var body: some View {
-        if let np = service.current {
-            TimelineView(.periodic(from: .now, by: 0.5)) { _ in
-                let pos = np.position()
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(np.title).font(.headline)
-                    Text("\(np.artist) · \(np.album)")
-                        .font(.subheadline).foregroundStyle(.secondary)
-                    ProgressView(value: np.duration > 0 ? pos / np.duration : 0)
-                    HStack {
-                        Text(np.isPlaying ? "▶︎ 재생 중" : "⏸ 일시정지")
-                        Spacer()
-                        Text("\(NowPlayingService.time(pos)) / \(NowPlayingService.time(np.duration))")
-                            .monospacedDigit()
-                    }
-                    .font(.caption).foregroundStyle(.secondary)
-                }
-                .padding(.vertical, 4)
-            }
-        } else {
-            Text(service.status).foregroundStyle(.secondary)
-        }
-        LabeledContent("조회 횟수", value: "\(service.pollCount)")
-    }
-}
-
 // MARK: - 저장된 가사 (아이폰 안의 앱 전용 폴더 LiveLyrics/synced, LiveLyrics/plain)
 
 private struct SavedLyricsSection: View {
@@ -282,22 +246,6 @@ private struct SavedLyricsSection: View {
         syncedCount = LyricsStore.savedNames(.synced).count
         plainCount = LyricsStore.savedNames(.plain).count
         notFoundCount = LyricsStore.notFoundRecords().count
-    }
-}
-
-/// [가사 다시 찾기] — 현재 곡의 저장본·검색 기록을 지우고 바로 다시 검색 (작업 005)
-private struct RefindLyricsButton: View {
-    @EnvironmentObject private var controller: ExperimentController
-    @ObservedObject var service: NowPlayingService
-
-    var body: some View {
-        if let np = service.current, InstrumentalTitle.matches(np.title) {
-            Text("제목으로 연주곡이라고 판단된 곡이에요 — 가사를 찾지 않아요")
-                .font(.caption).foregroundStyle(.secondary)
-        } else {
-            Button("가사 다시 찾기") { controller.refindLyrics() }
-                .disabled(!controller.isRunning || service.current == nil)
-        }
     }
 }
 
