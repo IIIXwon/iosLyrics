@@ -136,4 +136,64 @@ struct RemoteSyncTests {
         #expect(PollTiming.connectedPlaying == 15)
         #expect(PollTiming.connectedPaused == 30)
     }
+
+    // 11
+    @Test func 승인판단_세션이없으면_승인이필요하다() {
+        // given // when
+        let result = RemoteAuthPlan.action(hasSession: false, expiresIn: nil, canRenew: false)
+
+        // then
+        #expect(result == .needAuthorize)
+    }
+
+    // 12
+    @Test func 승인판단_만료까지여유가있으면_바로연결한다() {
+        // given // when
+        let result = RemoteAuthPlan.action(hasSession: true, expiresIn: 3000, canRenew: true)
+
+        // then
+        #expect(result == .connect)
+    }
+
+    // 13
+    @Test func 승인판단_만료임박이고갱신가능하면_갱신한다() {
+        // given // when
+        let result = RemoteAuthPlan.action(hasSession: true, expiresIn: 30, canRenew: true)
+
+        // then
+        #expect(result == .renew)
+    }
+
+    // 14
+    @Test func 승인판단_이미만료됐고갱신불가면_승인이필요하다() {
+        // given // when
+        let result = RemoteAuthPlan.action(hasSession: true, expiresIn: -10, canRenew: false)
+
+        // then
+        #expect(result == .needAuthorize)
+    }
+
+    // 15
+    @Test func 승인판단_만료임박이고갱신불가면_승인이필요하다() {
+        // given // when
+        let result = RemoteAuthPlan.action(hasSession: true, expiresIn: 30, canRenew: false)
+
+        // then
+        #expect(result == .needAuthorize)
+    }
+
+    // 16
+    @Test func 승인버튼_로그인돼있고승인이필요할때만_보인다() {
+        // given // when // then
+        #expect(RemoteAuthPlan.showsAuthorizeButton(loggedIn: true, action: .needAuthorize) == true)
+        #expect(RemoteAuthPlan.showsAuthorizeButton(loggedIn: true, action: .connect) == false)
+        #expect(RemoteAuthPlan.showsAuthorizeButton(loggedIn: true, action: .renew) == false)
+        #expect(RemoteAuthPlan.showsAuthorizeButton(loggedIn: false, action: .needAuthorize) == false)
+    }
+
+    // 17
+    @Test func 상수_갱신여유시간이_60초다() {
+        // given // when // then
+        #expect(RemoteAuthPlan.renewMargin == 60)
+    }
 }
