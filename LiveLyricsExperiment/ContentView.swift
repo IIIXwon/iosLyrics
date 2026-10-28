@@ -27,20 +27,13 @@ struct ContentView: View {
                     Text("카드 시간이 Spotify보다 늦으면 + 로, 빠르면 - 로 맞추세요. 추적 중에도 바로 반영돼요.")
                 }
 
-                Section {
-                    if controller.isRunning {
-                        Button("정지", role: .destructive) { controller.stop() }
-                    } else {
-                        Button("시작") { controller.start() }
-                        if controller.readiness.hasProblem {
-                            // 버튼을 막지는 않음 (시작할 때 필요한 것을 다시 확인함)
-                            Text("준비 상태를 먼저 확인해 주세요")
-                                .font(.caption).foregroundStyle(.orange)
-                        }
-                    }
-                } footer: {
-                    Text("앱을 열면 준비가 돼 있을 때 자동으로 시작해요. [정지]를 누르면 [시작]을 다시 누를 때까지 자동으로 시작하지 않아요.")
-                }
+                StartStopSection(
+                    auth: controller.auth,
+                    readiness: controller.readiness,
+                    isRunning: controller.isRunning,
+                    onStart: { controller.start() },
+                    onStop: { controller.stop() }
+                )
 
                 SavedLyricsSection()
 
@@ -168,6 +161,50 @@ private struct SpotifySection: View {
                 Button("Spotify로 로그인", action: onLogin)
                     .disabled(!enabled)
             }
+        }
+    }
+}
+
+// MARK: - 시작/정지
+
+/// [시작] 버튼 상태 (작업 018 검토 2차: 로그아웃이면 회색)
+nonisolated struct StartButton: Equatable {
+    let enabled: Bool
+    let hint: String?
+
+    /// 로그아웃이면 비활성 + 로그인 안내, 로그인됐지만 다른 준비 항목이 ❌이면 활성 + 확인 안내
+    static func make(isLoggedIn: Bool, hasProblem: Bool) -> StartButton {
+        if !isLoggedIn {
+            return StartButton(enabled: false, hint: "Spotify에 로그인하면 시작할 수 있어요")
+        }
+        return StartButton(enabled: true, hint: hasProblem ? "준비 상태를 먼저 확인해 주세요" : nil)
+    }
+}
+
+/// auth·readiness를 직접 관찰해서 로그인/로그아웃하자마자 [시작] 상태가 바뀌도록 따로 뺀 칸
+private struct StartStopSection: View {
+    @ObservedObject var auth: SpotifyAuth
+    @ObservedObject var readiness: ReadinessModel
+    let isRunning: Bool
+    let onStart: () -> Void
+    let onStop: () -> Void
+
+    var body: some View {
+        Section {
+            if isRunning {
+                Button("정지", role: .destructive, action: onStop)
+            } else {
+                let start = StartButton.make(isLoggedIn: auth.isLoggedIn, hasProblem: readiness.hasProblem)
+                // 위치 권한 등 다른 항목이 ❌여도 막지는 않음 (시작할 때 필요한 것을 다시 확인함)
+                Button("시작", action: onStart)
+                    .disabled(!start.enabled)
+                if let hint = start.hint {
+                    Text(hint)
+                        .font(.caption).foregroundStyle(.orange)
+                }
+            }
+        } footer: {
+            Text("앱을 열면 준비가 돼 있을 때 자동으로 시작해요. [정지]를 누르면 [시작]을 다시 누를 때까지 자동으로 시작하지 않아요.")
         }
     }
 }
