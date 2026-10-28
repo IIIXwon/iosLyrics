@@ -82,18 +82,20 @@ Claude Code 메인 세션(리드)이 서브에이전트 `qa`, `ios-dev`를 불�
 | 목적 | 명령 |
 |---|---|
 | 빌드(컴파일 확인) | `xcodebuild -project LiveLyricsExperiment.xcodeproj -scheme LiveLyricsExperiment -destination 'generic/platform=iOS' -quiet build` (서명 오류면 끝에 `CODE_SIGNING_ALLOWED=NO`) |
-| 단위 테스트(전체, 리드만) | `xcodebuild -project LiveLyricsExperiment.xcodeproj -scheme LiveLyricsExperiment -destination 'platform=iOS Simulator,name=iPhone 18 Pro' -quiet test` |
-| 단위 테스트(일부, `qa`·`ios-dev`) | 위 명령 끝에 `-only-testing:LiveLyricsTests/<테스트 파일 이름(확장자 없이)>` |
+| 단위 테스트(전체, Mac에서) | `swift test` (저장소 루트, 시뮬레이터 없음) |
+| 단위 테스트(일부) | `swift test --filter <테스트 파일 이름(확장자 없이)>` |
+| 단위 테스트(시뮬레이터, 리드가 `/task` ⑤에서 1번) | `xcodebuild -project LiveLyricsExperiment.xcodeproj -scheme LiveLyricsExperiment -destination 'platform=iOS Simulator,name=iPhone 18 Pro' -quiet test` |
 | 시뮬레이터 이름 확인 | `xcrun simctl list devices available` |
 | 규칙·Client ID 점검 | `scripts/check.sh` |
 
+> 확정 (2026-10-29, 024): `swift test`는 루트 `Package.swift`가 `LiveLyricsExperiment/Logic/`만 모듈 `LiveLyricsExperiment`로 컴파일한다. 테스트할 순수 로직은 **`Logic/`에 `import Foundation`만** 써서 둔다(`scripts/check.sh`가 점검).
 > 확정 (2026-10-27, 011): 시뮬레이터는 `iPhone 18 Pro` (`iPhone 18`은 없음). 빌드 명령은 앱 스킴이라 위젯 확장도 함께 빌드된다.
 
 - **아이폰 실행·동작 확인은 사용자가** 실기기에서 한다. 테스트 통과 ≠ 동작 확인이므로 실기기에서 볼 항목을 알려 준다
 - 결과 확인: 사용자가 앱의 [전체 복사] 로그를 붙여 줌. 잠금 상태 확인은 Mac 콘솔 앱에서 `liveactivitiesd` 로그
 
 ### 테스트 규칙
-- 단위 테스트(Swift Testing, 타깃 `LiveLyricsTests`)는 **순수 로직만**: LRC 파싱, 현재 줄 계산, 제목 정리·연주곡 제목 판단, 재검색 간격, 호출 수·한도 판단, 권한 판단 등
+- 단위 테스트(Swift Testing, 타깃 `LiveLyricsTests`)는 **`LiveLyricsExperiment/Logic/`의 순수 로직만**: LRC 파싱, 현재 줄 계산, 제목 정리·연주곡 제목 판단, 재검색 간격, 호출 수·한도 판단, 권한 판단 등
 - 기기 동작(잠금화면 카드, 백그라운드 유지, 카드 ▶︎·탭, 실제 Spotify 응답)은 **아이폰 확인**으로 본다. UI 테스트(XCUITest)는 쓰지 않는다
 - 이름은 한글 `행동_조건_결과`, 본문은 `// given // when // then`. 실제 네트워크·위치·키체인·UserDefaults 값은 쓰지 않는다
 - Red: 기존 함수는 assertion 실패여야 한다. 새 함수는 지시서에 시그니처가 있을 때만 "없는 이름" 컴파일 에러를 Red로 인정한다
@@ -135,7 +137,7 @@ Claude Code 메인 세션(리드)이 서브에이전트 `qa`, `ios-dev`를 불�
 ## 🔁 작업 흐름
 - **`/roadmap`**: 예정·진행 중·완료를 "번호 제목"으로 보기. `/roadmap add <내용>`으로 예정에 추가 → `/task N`(번호만)으로 시작
 - **`/task N`**: ① 리드 지시서(없으면 plan mode로 초안 → 승인)·브랜치 → ② `qa` 테스트 작성(Red) → ③ `ios-dev` 개발 → ④ 리드가 전체 테스트 1번 실행 → ⑤ 리드 확인 + `/code-review` → ⑥ 아이폰 확인 항목을 알려 주고 멈춤
-  - 시뮬레이터 테스트는 느리므로 `qa`·`ios-dev`는 해당 테스트 파일만(`-only-testing`), 전체는 리드만 돌린다
+  - 테스트는 `swift test`(Mac)로 돌린다. 시뮬레이터 테스트는 리드가 ⑤에서 1번만 (앱 타깃 컴파일 확인)
   - ④ 실패·⑤ 지적 → `ios-dev`가 항목마다 수용(수정 후 ④) 또는 거절(리드 판정: 테스트 틀림 → `qa` / 지시서 모호 → 리드 / 개발 틀림 → `ios-dev`)
   - Red 목록이 "없음"이면 ②④를 건너뛴다. 피드백 루프가 3번을 넘으면 사용자에게 묻는다
 - **`/judge N`**: 사용자가 붙인 로그 → `qa` 로그 모드로 근거 정리 → 리드 판정 → 통과(지시서 `완료`, roadmap·decisions 갱신, PR) 또는 "검토 N차 — 수정 요청" → `/task N`
