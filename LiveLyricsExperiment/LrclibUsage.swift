@@ -21,14 +21,18 @@ nonisolated enum LrclibUsage {
     private static let minuteKey = "minute"        // 현재 분 (HH*60+mm)
     private static let minuteCountKey = "minuteCount"
     private static let peakKey = "peak"
+    private static let lock = NSLock()
 
     /// 실제로 요청을 보내기 직전에 1회 기록
     static func record(_ kind: Kind) {
+        lock.lock()
+        defer { lock.unlock() }   // 읽기-수정-쓰기가 겹쳐 횟수가 사라지지 않게
+        let now = Date()          // 날짜 키와 분 키를 같은 시각으로 계산
         var all = load()
-        let today = dayKey(daysAgo: 0)
+        let today = dayKey(daysAgo: 0, from: now)
         var day = all[today] ?? [:]
         day[kind.rawValue, default: 0] += 1
-        let c = Calendar.current.dateComponents([.hour, .minute], from: Date())
+        let c = Calendar.current.dateComponents([.hour, .minute], from: now)
         day = updatedPeak(day, minute: String(format: "%02d:%02d", c.hour ?? 0, c.minute ?? 0))
         all[today] = day
         // 최근 7일만 남김
@@ -79,8 +83,8 @@ nonisolated enum LrclibUsage {
         UserDefaults.standard.dictionary(forKey: key) as? [String: [String: Int]] ?? [:]
     }
 
-    private static func dayKey(daysAgo: Int) -> String {
-        let date = Calendar.current.date(byAdding: .day, value: -daysAgo, to: Date()) ?? Date()
+    private static func dayKey(daysAgo: Int, from now: Date = Date()) -> String {
+        let date = Calendar.current.date(byAdding: .day, value: -daysAgo, to: now) ?? now
         let c = Calendar.current.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
     }

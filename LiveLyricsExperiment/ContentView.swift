@@ -113,8 +113,9 @@ private struct DeveloperMenuView: View {
             }
 
             Section {
-                LrclibUsageRow(title: "오늘", daysAgo: 0)
-                LrclibUsageRow(title: "어제", daysAgo: 1)
+                // 부모가 다시 그려질 때(로그 추가 등) 값을 새로 계산해 넘김
+                LrclibUsageRow(title: "오늘", total: LrclibUsage.total(daysAgo: 0), summary: LrclibUsage.summary(daysAgo: 0))
+                LrclibUsageRow(title: "어제", total: LrclibUsage.total(daysAgo: 1), summary: LrclibUsage.summary(daysAgo: 1))
             } header: {
                 Text("LRCLIB 호출 수")
             } footer: {
@@ -367,12 +368,13 @@ private struct ApiUsageRow: View {
 
 private struct LrclibUsageRow: View {
     let title: String
-    let daysAgo: Int
+    let total: Int
+    let summary: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            LabeledContent(title, value: "\(LrclibUsage.total(daysAgo: daysAgo))회")
-            Text(LrclibUsage.summary(daysAgo: daysAgo))
+            LabeledContent(title, value: "\(total)회")
+            Text(summary)
                 .font(.caption).foregroundStyle(.secondary)
         }
     }

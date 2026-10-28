@@ -422,9 +422,10 @@ nonisolated enum LyricsService {
 
         var request = URLRequest(url: url, timeoutInterval: 10)
         request.setValue("LiveLyricsExperiment (personal use)", forHTTPHeaderField: "User-Agent")
-        LrclibUsage.record(path == "get" ? .get : .search)   // 재시도 요청도 실제 호출이라 센다
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { return nil }
+        // 서버가 응답한 요청만 센다 (상태 코드 무관, 취소·오프라인으로 throw되면 세지 않음)
+        LrclibUsage.record(path == "get" ? .get : .search)
         if http.statusCode == 404 { return nil }
         guard (200..<300).contains(http.statusCode) else { throw LyricsError.http(http.statusCode) }
         return data
