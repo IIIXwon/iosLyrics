@@ -10,6 +10,7 @@ nonisolated enum APIUsage {
         case state     // 재생 상태 조회 (/me/player)
         case play      // 재생 요청 (play · 재생 기기 이전)
         case devices   // 기기 목록
+        case queue     // 다음 곡 조회 (/me/player/queue, 작업 021 미리 받기)
         case token     // 토큰 갱신·발급 (accounts.spotify.com)
 
         var label: String {
@@ -17,6 +18,7 @@ nonisolated enum APIUsage {
             case .state: return "재생 상태 조회"
             case .play: return "재생 요청"
             case .devices: return "기기 목록"
+            case .queue: return "다음 곡 조회"
             case .token: return "토큰 갱신"
             }
         }
@@ -42,7 +44,7 @@ nonisolated enum APIUsage {
         counts(daysAgo: daysAgo).values.reduce(0, +)
     }
 
-    /// "재생 상태 조회 120 · 재생 요청 2 · 기기 목록 0 · 토큰 갱신 3"
+    /// "재생 상태 조회 120 · 재생 요청 2 · 기기 목록 0 · 다음 곡 조회 30 · 토큰 갱신 3"
     static func summary(daysAgo: Int) -> String {
         let counts = counts(daysAgo: daysAgo)
         return Kind.allCases.map { "\($0.label) \(counts[$0] ?? 0)" }.joined(separator: " · ")

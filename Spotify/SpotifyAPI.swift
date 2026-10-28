@@ -25,6 +25,50 @@ nonisolated struct SpotifyDevice: Codable, Equatable {
     let isActive: Bool
 }
 
+/// 대기열의 다음 곡 (작업 021: 다음 곡 가사 미리 받기용)
+nonisolated struct QueuedTrack: Equatable {
+    var id: String
+    var title: String
+    var artist: String
+    var album: String
+    var duration: TimeInterval   // 초
+    /// `NowPlaying.key`와 같은 규칙 (id가 비면 "아티스트|제목")
+    var key: String { id.isEmpty ? "\(artist)|\(title)" : id }
+}
+
+/// GET /me/player/queue 응답 해석 (작업 021)
+nonisolated enum SpotifyQueue {
+    /// GET /me/player/queue 본문에서 다음 곡(queue 첫 항목). track이 아니거나 해석 실패면 nil
+    static func next(from data: Data) -> QueuedTrack? {
+        struct Response: Decodable {
+            struct Item: Decodable {
+                struct Artist: Decodable { let name: String }
+                struct Album: Decodable { let name: String }
+                let type: String?
+                let id: String?
+                let name: String?
+                let durationMs: Int?
+                let artists: [Artist]?
+                let album: Album?
+            }
+            let queue: [Item]?
+        }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        guard let response = try? decoder.decode(Response.self, from: data),
+              let item = response.queue?.first,
+              item.type == "track",
+              let name = item.name else { return nil }
+        return QueuedTrack(
+            id: item.id ?? "",
+            title: name,
+            artist: (item.artists ?? []).map(\.name).joined(separator: ", "),
+            album: item.album?.name ?? "",
+            duration: TimeInterval(item.durationMs ?? 0) / 1000
+        )
+    }
+}
+
 enum SpotifyAPIError: LocalizedError {
     case rateLimited(retryAfter: TimeInterval, body: String)   // 60초 이하로 기다리면 되는 429
     case blocked(until: Date, body: String?)                    // 60초를 넘게 막힘(한도 차단). 그 시각까지 호출하지 않음 (작업 008)
@@ -115,6 +159,13 @@ final class SpotifyAPI {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         return try decoder.decode(Response.self, from: data).devices
+    }
+
+    /// 대기열의 다음 곡 (GET /v1/me/player/queue, 작업 021). 대기열이 비었거나 다음이 곡이 아니면(에피소드 등) nil
+    /// scope `user-read-playback-state`로 가능 (재로그인 불필요)
+    func nextInQueue() async throws -> QueuedTrack? {
+        guard let data = try await get("https://api.spotify.com/v1/me/player/queue", kind: .queue) else { return nil }
+        return SpotifyQueue.next(from: data)
     }
 
     /// 재생을 다른 기기로 옮기고 재생 (PUT /v1/me/player, 재생 이전). 성공하면 HTTP 상태 코드

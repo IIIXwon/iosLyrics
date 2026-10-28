@@ -54,6 +54,12 @@ final class ExperimentController: ObservableObject {
     private var lyricsTask: Task<Void, Never>?
     private var lineTask: Task<Void, Never>?
 
+    // 다음 곡 가사 미리 받기 (작업 021)
+    private var prefetchTask: Task<Void, Never>?    // 가장 최근에 시작한 미리 받기
+    private var prefetchKey: String?                // 그 미리 받기가 받는 곡의 key (대기열 조회가 끝나야 정해짐)
+    private var prefetchID = 0                      // 더 새 미리 받기가 시작됐는지 구분용
+    private var prefetchedKeys: [String] = []       // 최근에 미리 받기를 시도한 곡 key (최대 LyricsPrefetch.memory개)
+
     // 재생이 멈춘 뒤 이 시간이 지나면 위치 추적을 끔 (배터리 절약)
     private let idleGrace: TimeInterval = 180
     private var idleTask: Task<Void, Never>?
@@ -755,7 +761,7 @@ final class ExperimentController: ObservableObject {
         lyricsKey = nil
     }
 
-    /// 곡이 바뀔 때 1번만      조회
+    /// 곡이 바뀔 때 1번만 조회. 저장된 싱크 가사는 바로 적용하고, 없으면 Task에서 검색 (작업 021)
     private func loadLyrics(for np: NowPlaying) {
         resetLyrics()
         lyricsKey = np.key
@@ -765,22 +771,39 @@ final class ExperimentController: ObservableObject {
         if InstrumentalTitle.matches(np.title) {
             lyricsKind = .instrumental
             log("🎼 연주곡 (제목으로 판단): \(np.title)")
+            startPrefetchIfNeeded(after: key)
             return
         }
 
-        log("🔎 가사 검색: \(np.artist) - \(np.title)")
+        // 저장해 둔 싱크 가사는 바로 적용 → 호출한 didUpdate의 첫 갱신("곡 변경")에 가사가 같이 들어감 (작업 021)
+        if let saved = LyricsStore.loadSynced(title: np.title, artist: np.artist) {
+            apply(saved, for: np, save: false)
+            log("💾 저장된 싱크 가사 사용 (\(saved.lines.count)줄)")
+            startPrefetchIfNeeded(after: key)
+            return
+        }
+
+        // 이 곡을 미리 받는 중이면 새로 검색하지 않고 그 작업이 끝나길 기다림 (작업 021)
+        let pending = prefetchKey == key ? prefetchTask : nil
+        if pending != nil { log("⏳ 미리 받는 중인 가사를 기다려요: \(np.artist) - \(np.title)") }
+
         lyricsTask = Task {
+            if let pending {
+                await pending.value
+                guard !Task.isCancelled, lyricsKey == key else { return }
+            }
             var result: LyricsResult?
             var fromNetwork = false
 
             if let saved = LyricsStore.loadSynced(title: np.title, artist: np.artist) {
-                // 이미 저장해 둔 싱크 가사가 있으면 인터넷 조회 없이 사용
+                // 이미 저장해 둔 싱크 가사가 있으면 인터넷 조회 없이 사용 (미리 받기가 방금 저장한 경우)
                 result = saved
                 log("💾 저장된 싱크 가사 사용 (\(saved.lines.count)줄)")
             } else if let skipped = resultFromSearchRecord(for: np) {
                 // 최근에 이미 검색했다면(간격 안) 인터넷 조회를 건너뜀
                 result = skipped
             } else {
+                log("🔎 가사 검색: \(np.artist) - \(np.title)")
                 result = await searchWithRetry(np, key: key)
                 guard !Task.isCancelled, lyricsKey == key else { return }
                 fromNetwork = result != nil
@@ -806,24 +829,101 @@ final class ExperimentController: ObservableObject {
                 sendCard(makeState(current), key: key, reason: reason)
                 scheduleNextLine()
             }
+            startPrefetchIfNeeded(after: key)
         }
+    }
+
+    // MARK: - 다음 곡 가사 미리 받기 (작업 021)
+
+    /// 현재 곡(key)의 가사 처리가 끝난 뒤 1번: 재생 중이고 카드가 있으면 대기열 다음 곡의 가사를 미리 받아 저장
+    /// 앞서 시작한 미리 받기(다른 곡)가 아직 진행 중이어도 취소하지 않음 — 그 결과는 저장만 됨
+    private func startPrefetchIfNeeded(after key: String) {
+        guard isRunning, activity != nil, lyricsKey == key,
+              let current = nowPlaying.current, current.key == key, current.isPlaying else { return }
+        prefetchID += 1
+        let id = prefetchID
+        prefetchKey = nil
+        prefetchTask = Task {
+            await prefetchNext(currentKey: key, id: id)
+            if prefetchID == id {
+                prefetchTask = nil
+                prefetchKey = nil
+            }
+        }
+    }
+
+    /// 대기열 다음 곡 1곡의 가사를 LRCLIB에서 받아 저장·검색 기록만 남김 (현재 곡 상태·카드는 건드리지 않음)
+    /// 실패·한도 차단이어도 재시도하지 않음 (429·한도 차단 처리는 폴링 쪽이 함)
+    private func prefetchNext(currentKey: String, id: Int) async {
+        let next: QueuedTrack?
+        do {
+            next = try await api.nextInQueue()
+        } catch SpotifyAPIError.blocked {
+            log("⚠️ 다음 곡 미리 받기 실패: Spotify 한도 차단 중")
+            return
+        } catch SpotifyAPIError.rateLimited {
+            log("⚠️ 다음 곡 미리 받기 실패: Spotify 호출 한도 초과")
+            return
+        } catch {
+            log("⚠️ 다음 곡 미리 받기 실패: 다음 곡 조회 오류 — \(error.localizedDescription)")
+            return
+        }
+        guard let next else {
+            log("⏭ 다음 곡 미리 받기 생략 — 대기열에 다음 곡이 없거나 곡이 아님")
+            return
+        }
+        guard LyricsPrefetch.shouldPrefetch(nextKey: next.key, currentKey: currentKey, tried: Set(prefetchedKeys)) else { return }
+        prefetchedKeys.append(next.key)
+        if prefetchedKeys.count > LyricsPrefetch.memory {
+            prefetchedKeys.removeFirst(prefetchedKeys.count - LyricsPrefetch.memory)
+        }
+        if prefetchID == id { prefetchKey = next.key }   // 이 곡이 재생되면 loadLyrics가 이 작업을 기다림
+
+        // 검색할 필요가 없는 곡: 연주곡 제목, 저장된 싱크 가사, 신선한 검색 기록
+        if InstrumentalTitle.matches(next.title)
+            || LyricsStore.loadSynced(title: next.title, artist: next.artist) != nil
+            || freshSearchRecord(title: next.title, artist: next.artist) != nil {
+            return
+        }
+
+        let result: LyricsResult
+        do {
+            result = try await LyricsService.find(
+                title: next.title, artist: next.artist, album: next.album, duration: next.duration, fast: false)
+        } catch {
+            log("⚠️ 다음 곡 미리 받기 실패: \(next.artist) - \(next.title) — \(error.localizedDescription)")
+            return
+        }
+        store(result, title: next.title, artist: next.artist, album: next.album, duration: next.duration)
+        let found: String
+        switch result.kind {
+        case .synced: found = "싱크 \(result.lines.count)줄"
+        case .plain: found = "일반 가사만"
+        case .instrumental, .none: found = "없음"
+        }
+        log("⏭ 다음 곡 가사 미리 받음: \(next.artist) - \(next.title) (\(found))")
     }
 
     /// 재검색 간격 (작업 005): 일반 가사만·못 찾음은 24시간, LRCLIB이 연주곡이라고 한 곡은 30일 안에는 다시 검색하지 않음
     /// 싱크 가사는 저장본을 쓰므로 여기서 다루지 않음. 간격이 지났거나 기록이 없으면 nil (= 검색해야 함)
     private func resultFromSearchRecord(for np: NowPlaying) -> LyricsResult? {
-        guard let record = LyricsStore.searchRecord(title: np.title, artist: np.artist) else { return nil }
+        guard let found = freshSearchRecord(title: np.title, artist: np.artist) else { return nil }
+        log("⏭ 가사 검색 생략 — \(found.1)")
+        return found.0
+    }
+
+    /// 재검색 간격 안의 검색 기록이 있으면 (쓸 결과, 로그용 설명). 로그는 남기지 않음 (미리 받기도 같은 기준을 씀, 작업 021)
+    private func freshSearchRecord(title: String, artist: String) -> (LyricsResult, String)? {
+        guard let record = LyricsStore.searchRecord(title: title, artist: artist) else { return nil }
         let day: TimeInterval = 24 * 3600
         switch record.result {
         case "plain":
             // 저장해 둔 일반 가사 파일이 있을 때만 건너뜀
-            guard record.isFresh(within: day), let saved = LyricsStore.loadPlain(title: np.title, artist: np.artist) else { return nil }
-            log("⏭ 가사 검색 생략 — 일반 가사만 기록 (\(record.agoText))")
-            return saved
+            guard record.isFresh(within: day), let saved = LyricsStore.loadPlain(title: title, artist: artist) else { return nil }
+            return (saved, "일반 가사만 기록 (\(record.agoText))")
         case "none":
             guard record.isFresh(within: day) else { return nil }
-            log("⏭ 가사 검색 생략 — 못 찾음 기록 (\(record.agoText))")
-            return LyricsResult(kind: .none)
+            return (LyricsResult(kind: .none), "못 찾음 기록 (\(record.agoText))")
         default:
             // 예전 버전이 "연주곡"으로 기록해 둔 곡도 여기로 와서 다시 검색함 (LRCLIB의 연주곡 표시는 믿지 않음)
             return nil
@@ -836,8 +936,9 @@ final class ExperimentController: ObservableObject {
         var failures = 0
         while true {
             do {
+                // 지금 재생 중인 곡이라 1·2단계를 동시에 보냄 (작업 021)
                 return try await LyricsService.find(
-                    title: np.title, artist: np.artist, album: np.album, duration: np.duration)
+                    title: np.title, artist: np.artist, album: np.album, duration: np.duration, fast: true)
             } catch {
                 guard !Task.isCancelled, lyricsKey == key else { return nil }
                 failures += 1
@@ -872,17 +973,25 @@ final class ExperimentController: ObservableObject {
             case .none:
                 log("⚠️ 가사 없음: \(np.title) – \(np.artist)")
             }
-            do {
-                if let folder = try LyricsStore.save(result, title: np.title, artist: np.artist) {
-                    log("💾 가사 저장 → LiveLyrics/\(folder)/")
-                }
-            } catch {
-                log("⚠️ 가사 저장 실패: \(error.localizedDescription)")
+            if let folder = store(result, title: np.title, artist: np.artist, album: np.album, duration: np.duration) {
+                log("💾 가사 저장 → LiveLyrics/\(folder)/")
             }
-            // 검색 결과를 곡별로 기록 (재검색 간격 · 못 찾은 곡 목록). 싱크 가사를 찾았으면 기록이 지워짐
-            LyricsStore.updateSearchRecord(for: result, title: np.title, artist: np.artist,
-                                           album: np.album, duration: np.duration)
         }
+    }
+
+    /// 인터넷에서 받은 가사를 앱 전용 폴더에 저장하고 검색 기록을 남김. 현재 곡 상태는 바꾸지 않음 (미리 받기도 씀, 작업 021)
+    /// 저장했으면 폴더 이름("synced"/"plain")
+    @discardableResult
+    private func store(_ result: LyricsResult, title: String, artist: String, album: String, duration: TimeInterval) -> String? {
+        var folder: String?
+        do {
+            folder = try LyricsStore.save(result, title: title, artist: artist)
+        } catch {
+            log("⚠️ 가사 저장 실패: \(error.localizedDescription)")
+        }
+        // 검색 결과를 곡별로 기록 (재검색 간격 · 못 찾은 곡 목록). 싱크 가사를 찾았으면 기록이 지워짐
+        LyricsStore.updateSearchRecord(for: result, title: title, artist: artist, album: album, duration: duration)
+        return folder
     }
 
     /// 다음 가사 줄이 나올 시각에 맞춰 카드 갱신 예약 (폴링 사이에 줄이 바뀌어도 제때 반영)
