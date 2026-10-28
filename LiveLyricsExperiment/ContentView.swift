@@ -146,6 +146,17 @@ private struct DeveloperMenuView: View {
 
 // MARK: - Spotify 로그인 영역
 
+/// Spotify 칸에 보일 버튼 하나 (로그인 상태면 로그아웃, 아니면 로그인)
+nonisolated enum SpotifyButton: Equatable {
+    case login(enabled: Bool)
+    case logout
+
+    /// 로그인돼 있으면 설정과 무관하게 로그아웃만, 아니면 설정(Client ID)이 있을 때만 로그인 버튼 활성
+    static func make(isLoggedIn: Bool, isConfigured: Bool) -> SpotifyButton {
+        isLoggedIn ? .logout : .login(enabled: isConfigured)
+    }
+}
+
 private struct SpotifySection: View {
     @ObservedObject var auth: SpotifyAuth
     let onLogin: () -> Void
@@ -153,12 +164,13 @@ private struct SpotifySection: View {
 
     var body: some View {
         Section("Spotify") {
-            if auth.isLoggedIn {
-                LabeledContent("상태", value: "로그인됨 ✅")
+            // 로그아웃 버튼이 보이면 로그인 상태라는 뜻이라 상태 줄은 따로 두지 않아요 (작업 018)
+            switch SpotifyButton.make(isLoggedIn: auth.isLoggedIn, isConfigured: SpotifyConfig.isConfigured) {
+            case .logout:
                 Button("로그아웃", role: .destructive, action: onLogout)
-            } else {
+            case .login(let enabled):
                 Button("Spotify로 로그인", action: onLogin)
-                    .disabled(!SpotifyConfig.isConfigured)
+                    .disabled(!enabled)
             }
         }
     }
