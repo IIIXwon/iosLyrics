@@ -20,7 +20,8 @@ Spotify에서 재생 중인 곡의 **싱크 가사를 아이폰 잠금화면(Liv
 | `LiveLyricsExperimentApp.swift` | 진입점, `ExperimentController`를 environmentObject로 주입 |
 | `ContentView.swift` | 준비 상태, 로그인, 싱크 보정, 시작/정지, 저장된 가사, 개발자 메뉴(로그·조회 설정) |
 | `ExperimentController.swift` | 전체 조율: Live Activity 시작·갱신·종료, 로그 |
-| `LyricsService.swift` | LRCLIB 4단계 검색 + LRC 파싱 + 현재 줄 계산 + 앱 전용 저장 폴더(`LyricsStore`: `synced/`·`plain/`) |
+| `Logic/` | **순수 로직(`swift test` 대상, `import Foundation`만)**. 아래 줄들 + `LrclibUsage`·`DailyUsage`·`SpotifyQuota`(호출 수), `PollTiming`, `SpotifyQueue`, `AppButtons`, `ReadinessRules`, `LogLimit` |
+| `Logic/LyricsService.swift` | LRCLIB 4단계 검색 + LRC 파싱 + 현재 줄 계산 + 앱 전용 저장 폴더(`LyricsStore`: `synced/`·`plain/`) |
 | `LocationKeepAlive.swift` | 백그라운드 유지용 저전력 위치 추적 |
 | `Spotify/SpotifyConfig.swift` | Client ID, Redirect URI `livelyrics://callback`, scopes |
 | `Spotify/SpotifyAuth.swift` | PKCE 로그인, 토큰 갱신, 키체인(`AfterFirstUnlock`) 저장 |
@@ -83,7 +84,7 @@ Claude Code 메인 세션(리드)이 서브에이전트 `qa`, `ios-dev`를 불�
 |---|---|
 | 빌드(컴파일 확인) | `xcodebuild -project LiveLyricsExperiment.xcodeproj -scheme LiveLyricsExperiment -destination 'generic/platform=iOS' -quiet build` (서명 오류면 끝에 `CODE_SIGNING_ALLOWED=NO`) |
 | 단위 테스트(전체, Mac에서) | `swift test` (저장소 루트, 시뮬레이터 없음) |
-| 단위 테스트(일부) | `swift test --filter <테스트 파일 이름(확장자 없이)>` |
+| 단위 테스트(일부) | `swift test --filter 'LiveLyricsTests\.<Suite 이름>/'` (Suite = 테스트 파일의 `struct` 이름, 파일 이름과 같게 짓는다) |
 | 단위 테스트(시뮬레이터, 리드가 `/task` ⑤에서 1번) | `xcodebuild -project LiveLyricsExperiment.xcodeproj -scheme LiveLyricsExperiment -destination 'platform=iOS Simulator,name=iPhone 18 Pro' -quiet test` |
 | 시뮬레이터 이름 확인 | `xcrun simctl list devices available` |
 | 규칙·Client ID 점검 | `scripts/check.sh` |
