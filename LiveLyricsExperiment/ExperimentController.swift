@@ -38,6 +38,11 @@ final class ExperimentController: ObservableObject {
     let readiness: ReadinessModel          // 작업 004: 화면 맨 위의 "준비 상태"
     private let api: SpotifyAPI
 
+    // Spotify iOS SDK — 보조 출처 (작업 025). 연결돼 있으면 이벤트로 바로 반영, 끊기면 3초 폴링 그대로
+    let remote: SpotifyRemote
+    private var remoteLastAttempt: TimeInterval?   // 마지막 연결 시도 시각 (기기 가동 시간 기준)
+    private var remoteLastFailure: String?          // 같은 이유의 실패 로그를 연속으로 남기지 않으려고
+
     private var activity: Activity<LyricsActivityAttributes>?
     private var activityUpdates = 0
     private var skippedUpdates = 0
@@ -80,6 +85,7 @@ final class ExperimentController: ObservableObject {
     private init() {
         api = SpotifyAPI(auth: auth)
         nowPlaying = NowPlayingService(api: api)
+        remote = SpotifyRemote(auth: auth)
         readiness = ReadinessModel(auth: auth, location: location)
         // 작업 009의 SDK 실험 스위치 값은 더 이상 쓰지 않으므로 지움 (작업 010)
         UserDefaults.standard.removeObject(forKey: "sdkExperimentEnabled")
@@ -92,6 +98,10 @@ final class ExperimentController: ObservableObject {
         nowPlaying.onLog = { [weak self] in self?.log($0) }
         nowPlaying.onUpdate = { [weak self] np, changed in self?.didUpdate(np, trackChanged: changed) }
         nowPlaying.onBlocked = { [weak self] until, body in self?.handleQuotaBlock(until: until, body: body) }
+        remote.onState = { [weak self] in self?.nowPlaying.applyRemote($0) }
+        remote.onConnectionChange = { [weak self] in self?.remoteConnectionChanged($0) }
+        remote.onFailure = { [weak self] in self?.remoteConnectFailed($0) }
+        remote.onLog = { [weak self] in self?.log($0) }
 
         if !SpotifyConfig.isConfigured {
             log("⚠️ SpotifyConfig.swift에 Client ID를 넣어 주세요")
@@ -125,6 +135,7 @@ final class ExperimentController: ObservableObject {
         }
         log("🛑 앱 강제 종료 → 카드 종료")
         nowPlaying.stop()
+        remote.disconnect()
         location.stop()
         _ = semaphore.wait(timeout: .now() + 2)
     }
@@ -235,6 +246,7 @@ final class ExperimentController: ObservableObject {
         isRunning = true
         nowPlaying.start()
         log("▶️ 추적 시작 — 조회 간격 \(Int(nowPlaying.interval))초")
+        tryRemoteConnect(foreground: true)   // SDK 연결 시점 1: 추적 시작 (작업 025)
         return true
     }
 
@@ -257,6 +269,8 @@ final class ExperimentController: ObservableObject {
         activity = nil
         Task { await ending?.end(nil, dismissalPolicy: .immediate) }
         location.stop()
+        remote.disconnect()
+        remoteLastAttempt = nil
         isRunning = false
         log("⏹ 정지 (조회 \(nowPlaying.pollCount)회, 카드 갱신 \(activityUpdates)회, 갱신 생략 \(skippedUpdates)회)")
     }
@@ -349,6 +363,11 @@ final class ExperimentController: ObservableObject {
             log("💓 조회 재개 — \(Self.durationText(now.timeIntervalSince(last))) 만에 · \(appStateName()) · 위치 \(location.isRunning ? "ON" : "OFF")")
         }
         lastPollAt = now
+
+        // SDK 연결 시점 3: 재생 중인데 SDK가 끊겨 있으면 60초에 1번까지 다시 연결 시도 (작업 025, 009 재확인용)
+        if np?.isPlaying == true, isRunning, UIApplication.shared.applicationState != .active {
+            tryRemoteConnect(foreground: false)
+        }
 
         guard activity != nil else { return }
         updateLocationPolicy(playing: np?.isPlaying == true)
@@ -1169,6 +1188,39 @@ final class ExperimentController: ObservableObject {
         case .background: return "백그라운드"
         @unknown default: return "알 수 없음"
         }
+    }
+
+    // MARK: - Spotify iOS SDK 연결 (작업 025)
+
+    /// 앱 화면으로 돌아왔을 때 (ContentView의 scenePhase .active). SDK 연결 시점 2
+    func appBecameActive() {
+        tryRemoteConnect(foreground: true)
+    }
+
+    /// SDK 연결 시도. foreground(추적 시작·화면 복귀)면 항상, 아니면 마지막 시도 후 60초가 지났을 때만 (RemoteRetry)
+    private func tryRemoteConnect(foreground: Bool) {
+        guard isRunning, auth.isLoggedIn, !remote.isConnected, !remote.isConnecting else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        guard RemoteRetry.shouldTry(now: now, lastAttempt: remoteLastAttempt, foreground: foreground) else { return }
+        remoteLastAttempt = now
+        remote.connect()
+    }
+
+    private func remoteConnectionChanged(_ connected: Bool) {
+        nowPlaying.remoteConnected = connected
+        if connected {
+            remoteLastFailure = nil
+            log("⚡ SDK 연결됨 — 폴링 완화(재생 중 \(Int(PollTiming.connectedPlaying))초)")
+        } else {
+            log("⚡ SDK 연결 끊김 — 3초 폴링 복귀 (\(remote.lastError ?? "이유 없음"))")
+        }
+    }
+
+    /// 연결 실패 로그는 같은 이유가 연속이면 1번만
+    private func remoteConnectFailed(_ reason: String) {
+        guard reason != remoteLastFailure else { return }
+        remoteLastFailure = reason
+        log("⚡ SDK 연결 실패: \(reason) (\(appStateName()))")
     }
 
     // MARK: - 로그

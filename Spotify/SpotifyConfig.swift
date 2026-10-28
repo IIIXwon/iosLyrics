@@ -11,7 +11,9 @@ enum SpotifyConfig {
 
     /// 필요한 권한: 현재 재생 곡·재생 상태 읽기, 재생 제어(카드의 ▶︎ 버튼)
     /// ⚠️ 권한을 추가하면 로그아웃 후 다시 로그인해야 반영돼요 (줄이는 건 다시 로그인하지 않아도 됨)
-    static let scopes = ["user-read-currently-playing", "user-read-playback-state", "user-modify-playback-state"]
+    /// app-remote-control: Spotify iOS SDK(App Remote) 연결용 — 곡 변경·일시정지 감지 전용 (작업 025)
+    static let scopes = ["user-read-currently-playing", "user-read-playback-state", "user-modify-playback-state",
+                         "app-remote-control"]
 
     static var isConfigured: Bool { !clientID.contains("여기에") && !clientID.isEmpty }
 }

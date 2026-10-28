@@ -15,6 +15,7 @@
 		309A07C4308EDC3200852D61 /* SpotifyConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 309A07C2308EDC3200852D61 /* SpotifyConfig.swift */; };
 		309A07C5308EDC3200852D61 /* SpotifyAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 309A07C1308EDC3200852D61 /* SpotifyAuth.swift */; };
 		309A07C6308EDC3200852D61 /* SpotifyAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 309A07C0308EDC3200852D61 /* SpotifyAPI.swift */; };
+		30A5025A00000000000000B2 /* SpotifyRemote.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30A5025A00000000000000B1 /* SpotifyRemote.swift */; };
 		309A07C7308EDC3200852D61 /* NowPlayingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 309A07BF308EDC3200852D61 /* NowPlayingService.swift */; };
 		309A07C9308EDC3200852D61 /* SpotifySecrets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 309A07C8308EDC3200852D61 /* SpotifySecrets.swift */; };
 		30A5025A00000000000000A1 /* SpotifyiOS in Frameworks */ = {isa = PBXBuildFile; productRef = 30A5025A00000000000000A2 /* SpotifyiOS */; };
@@ -58,6 +59,7 @@
 		309A079E308E5FD900852D61 /* LyricsActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsActivityAttributes.swift; sourceTree = "<group>"; };
 		309A07BF308EDC3200852D61 /* NowPlayingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingService.swift; sourceTree = "<group>"; };
 		309A07C0308EDC3200852D61 /* SpotifyAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyAPI.swift; sourceTree = "<group>"; };
+		30A5025A00000000000000B1 /* SpotifyRemote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyRemote.swift; sourceTree = "<group>"; };
 		309A07C1308EDC3200852D61 /* SpotifyAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyAuth.swift; sourceTree = "<group>"; };
 		309A07C2308EDC3200852D61 /* SpotifyConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyConfig.swift; sourceTree = "<group>"; };
 		309A07C8308EDC3200852D61 /* SpotifySecrets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifySecrets.swift; sourceTree = "<group>"; };
@@ -163,6 +165,7 @@
 			children = (
 				309A07BF308EDC3200852D61 /* NowPlayingService.swift */,
 				309A07C0308EDC3200852D61 /* SpotifyAPI.swift */,
+				30A5025A00000000000000B1 /* SpotifyRemote.swift */,
 				309A07C1308EDC3200852D61 /* SpotifyAuth.swift */,
 				309A07C2308EDC3200852D61 /* SpotifyConfig.swift */,
 				309A07C8308EDC3200852D61 /* SpotifySecrets.swift */,
@@ -314,6 +317,7 @@
 				309A07C4308EDC3200852D61 /* SpotifyConfig.swift in Sources */,
 				309A07C5308EDC3200852D61 /* SpotifyAuth.swift in Sources */,
 				309A07C6308EDC3200852D61 /* SpotifyAPI.swift in Sources */,
+				30A5025A00000000000000B2 /* SpotifyRemote.swift in Sources */,
 				309A07C7308EDC3200852D61 /* NowPlayingService.swift in Sources */,
 				309A07C9308EDC3200852D61 /* SpotifySecrets.swift in Sources */,
 			);
@@ -514,7 +518,6 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LiveLyricsExperiment/Info.plist;
-				OTHER_LDFLAGS = "-ObjC";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "잠금화면 가사를 계속 갱신하기 위해 백그라운드 실행에 사용합니다.";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
@@ -529,6 +532,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = "-ObjC";
 				PRODUCT_BUNDLE_IDENTIFIER = com.hwan.LiveLyricsExperiment;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -552,7 +556,6 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LiveLyricsExperiment/Info.plist;
-				OTHER_LDFLAGS = "-ObjC";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "잠금화면 가사를 계속 갱신하기 위해 백그라운드 실행에 사용합니다.";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
@@ -567,6 +570,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = "-ObjC";
 				PRODUCT_BUNDLE_IDENTIFIER = com.hwan.LiveLyricsExperiment;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;

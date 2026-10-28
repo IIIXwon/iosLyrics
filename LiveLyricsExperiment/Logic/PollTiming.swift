@@ -23,3 +23,25 @@ nonisolated enum PollTiming {
         return base
     }
 }
+
+/// SDK 연결 여부에 따른 기본 조회 간격 (작업 025)
+extension PollTiming {
+    enum State { case playing, paused, none }
+
+    /// 미연결 (작업 008 값 그대로)
+    static let playing: TimeInterval = 3
+    static let paused: TimeInterval = 15
+    static let noTrack: TimeInterval = 10
+    /// SDK 연결 중 (이벤트로 바로 알 수 있으니 폴링을 완화)
+    static let connectedPlaying: TimeInterval = 15
+    static let connectedPaused: TimeInterval = 30
+
+    /// SDK 연결 여부에 따른 기본 조회 간격. 미연결은 지금과 같은 3·15·10초
+    static func interval(connected: Bool, state: State) -> TimeInterval {
+        switch state {
+        case .playing: return connected ? connectedPlaying : playing
+        case .paused: return connected ? connectedPaused : paused
+        case .none: return noTrack
+        }
+    }
+}
