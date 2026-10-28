@@ -20,11 +20,21 @@ final class SpotifyRemote: NSObject {
 
     /// 마지막 끊김·실패 이유 (로그용)
     private(set) var lastError: String?
+    /// 마지막 끊김이 우리가 끊은 것(정지·강제 종료)인지. true면 lastError는 끊은 이유
+    private(set) var lastDisconnectByUser = false
     private(set) var isConnecting = false
     var isConnected: Bool { appRemote.isConnected }
 
+    /// 연결 시도 후 이 시간(초) 안에 성공·실패 콜백이 없으면 시간 초과로 보고 다시 시도할 수 있게 함
+    private let connectTimeout: TimeInterval = 15
+
     private let auth: SpotifyAuth
-    private var userDisconnecting = false   // 정지·강제 종료로 우리가 끊는 중
+    /// 정지·강제 종료로 우리가 끊는 중 (끊긴 이유). 다음 connect()나 끊김·실패 콜백에서 지움
+    private var userDisconnectReason: String?
+    /// onConnectionChange(true)를 보냈는지 (보낸 적 없으면 끊김도 알리지 않음)
+    private var reportedConnected = false
+    private var attempt = 0                       // 연결 시도 번호 (이전 시도의 토큰·시간 초과 처리가 섞이지 않게)
+    private var timeoutTask: Task<Void, Never>?
 
     private lazy var appRemote: SPTAppRemote = {
         let redirect = URL(string: SpotifyConfig.redirectURI) ?? URL(fileURLWithPath: "/")
@@ -43,26 +53,56 @@ final class SpotifyRemote: NSObject {
     func connect() {
         guard !isConnected, !isConnecting else { return }
         isConnecting = true
-        userDisconnecting = false
+        userDisconnectReason = nil
+        attempt += 1
+        let current = attempt
+        startTimeout(for: current)
         Task {
             do {
                 let token = try await auth.validAccessToken()
-                guard isConnecting else { return }   // 토큰을 받는 사이 disconnect()가 불림
+                // 토큰을 받는 사이 disconnect()·시간 초과·새 시도가 있었으면 그만둠
+                guard isConnecting, attempt == current else {
+                    // SDK에 연결을 요청하기 전에 끊었으므로 끊김 콜백이 오지 않음 → 여기서 정리
+                    if attempt == current { userDisconnectReason = nil }
+                    return
+                }
                 appRemote.connectionParameters.accessToken = token
                 appRemote.connect()
             } catch {
-                isConnecting = false
+                guard isConnecting, attempt == current else { return }
+                endAttempt()
                 fail("토큰: \(error.localizedDescription)")
             }
         }
     }
 
     /// 연결 끊기 (추적 정지·앱 강제 종료 때). 백그라운드로 갈 때는 부르지 않음 — 연결 유지가 잠금 상태 이득의 핵심
-    func disconnect() {
+    /// 연결 시도 중에 불리면, 나중에 연결이 성공해도 didConnect에서 바로 끊음
+    func disconnect(reason: String = "정지") {
         guard isConnected || isConnecting else { return }
-        userDisconnecting = true
-        isConnecting = false
+        userDisconnectReason = reason
+        endAttempt()
         if isConnected { appRemote.disconnect() }
+    }
+
+    /// 연결 시도 상태를 끝냄 (성공·실패·시간 초과·끊기)
+    private func endAttempt() {
+        isConnecting = false
+        timeoutTask?.cancel()
+        timeoutTask = nil
+    }
+
+    /// 연결 시도 후 connectTimeout 안에 SDK가 성공·실패를 알려 주지 않으면 시간 초과 처리
+    /// (안 그러면 isConnecting이 계속 true라 이후 재시도가 모두 막힘)
+    private func startTimeout(for current: Int) {
+        timeoutTask?.cancel()
+        let nanos = UInt64(connectTimeout * 1_000_000_000)
+        timeoutTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: nanos)
+            guard !Task.isCancelled, let self, self.isConnecting, self.attempt == current else { return }
+            self.endAttempt()
+            self.fail("시간 초과")
+        }
     }
 
     private func fail(_ reason: String) {
@@ -73,8 +113,15 @@ final class SpotifyRemote: NSObject {
     // MARK: - 연결 뒤 구독
 
     private func didConnect() {
-        isConnecting = false
+        endAttempt()
+        // 연결 시도 중에 disconnect()가 불렸음 → 연결됐다고 알리지 않고 바로 끊음
+        // (끊김 콜백이 오면 reportedConnected가 false라 알리지 않고 userDisconnectReason을 지움)
+        if userDisconnectReason != nil {
+            appRemote.disconnect()
+            return
+        }
         lastError = nil
+        reportedConnected = true
         onConnectionChange?(true)
         guard let player = appRemote.playerAPI else {
             onLog?("⚠️ SDK playerAPI 없음")
@@ -119,8 +166,11 @@ extension SpotifyRemote: SPTAppRemoteDelegate {
     nonisolated func appRemote(_ appRemote: SPTAppRemote, didFailConnectionAttemptWithError error: Error?) {
         let text = error?.localizedDescription ?? "이유 없음"
         Task { @MainActor in
-            self.isConnecting = false
-            if self.userDisconnecting { return }
+            self.endAttempt()
+            if self.userDisconnectReason != nil {   // 우리가 끊는 중이었음 → 실패로 알리지 않음
+                self.userDisconnectReason = nil
+                return
+            }
             self.fail(text)
         }
     }
@@ -128,9 +178,13 @@ extension SpotifyRemote: SPTAppRemoteDelegate {
     nonisolated func appRemote(_ appRemote: SPTAppRemote, didDisconnectWithError error: Error?) {
         let text = error?.localizedDescription
         Task { @MainActor in
-            self.isConnecting = false
-            self.lastError = self.userDisconnecting ? "정지" : (text ?? "이유 없음")
-            self.userDisconnecting = false
+            self.endAttempt()
+            let byUser = self.userDisconnectReason
+            self.userDisconnectReason = nil   // 다음 실제 끊김까지 남지 않게
+            guard self.reportedConnected else { return }   // 연결됐다고 알린 적 없으면 끊김도 알리지 않음
+            self.reportedConnected = false
+            self.lastDisconnectByUser = byUser != nil
+            self.lastError = byUser ?? text ?? "이유 없음"
             self.onConnectionChange?(false)
         }
     }

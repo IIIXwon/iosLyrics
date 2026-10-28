@@ -135,7 +135,7 @@ final class ExperimentController: ObservableObject {
         }
         log("🛑 앱 강제 종료 → 카드 종료")
         nowPlaying.stop()
-        remote.disconnect()
+        remote.disconnect(reason: "강제 종료")
         location.stop()
         _ = semaphore.wait(timeout: .now() + 2)
     }
@@ -365,7 +365,8 @@ final class ExperimentController: ObservableObject {
         lastPollAt = now
 
         // SDK 연결 시점 3: 재생 중인데 SDK가 끊겨 있으면 60초에 1번까지 다시 연결 시도 (작업 025, 009 재확인용)
-        if np?.isPlaying == true, isRunning, UIApplication.shared.applicationState != .active {
+        // 앱 상태와 무관 — 화면에 있을 때 끊긴 경우·정지→시작 직후 경쟁도 여기서 복구 (⑤ 리드 판정)
+        if np?.isPlaying == true, isRunning {
             tryRemoteConnect(foreground: false)
         }
 
@@ -1211,6 +1212,9 @@ final class ExperimentController: ObservableObject {
         if connected {
             remoteLastFailure = nil
             log("⚡ SDK 연결됨 — 폴링 완화(재생 중 \(Int(PollTiming.connectedPlaying))초)")
+        } else if remote.lastDisconnectByUser {
+            // 정지·강제 종료로 우리가 끊은 경우 (폴링도 함께 멈추므로 "3초 폴링 복귀"가 아님)
+            log("⚡ SDK 연결 끊음 (\(remote.lastError ?? "정지"))")
         } else {
             log("⚡ SDK 연결 끊김 — 3초 폴링 복귀 (\(remote.lastError ?? "이유 없음"))")
         }
