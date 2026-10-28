@@ -27,20 +27,13 @@ struct ContentView: View {
                     Text("카드 시간이 Spotify보다 늦으면 + 로, 빠르면 - 로 맞추세요. 추적 중에도 바로 반영돼요.")
                 }
 
-                Section {
-                    if controller.isRunning {
-                        Button("정지", role: .destructive) { controller.stop() }
-                    } else {
-                        Button("시작") { controller.start() }
-                        if controller.readiness.hasProblem {
-                            // 버튼을 막지는 않음 (시작할 때 필요한 것을 다시 확인함)
-                            Text("준비 상태를 먼저 확인해 주세요")
-                                .font(.caption).foregroundStyle(.orange)
-                        }
-                    }
-                } footer: {
-                    Text("앱을 열면 준비가 돼 있을 때 자동으로 시작해요. [정지]를 누르면 [시작]을 다시 누를 때까지 자동으로 시작하지 않아요.")
-                }
+                StartStopSection(
+                    auth: controller.auth,
+                    readiness: controller.readiness,
+                    isRunning: controller.isRunning,
+                    onStart: { controller.start() },
+                    onStop: { controller.stop() }
+                )
 
                 SavedLyricsSection()
 
@@ -70,10 +63,6 @@ struct ContentView: View {
     /// 준비 상태의 [해결] 버튼이 하는 일
     private func handle(_ fix: ReadinessItem.Fix) {
         switch fix {
-        case .login:
-            // 권한이 추가돼서 다시 로그인해야 하는 경우엔 먼저 로그아웃
-            if controller.auth.isLoggedIn { controller.logout() }
-            Task { await controller.login(using: webAuthenticationSession) }
         case .openSettings:
             if let url = URL(string: UIApplication.openSettingsURLString) {
                 UIApplication.shared.open(url)
@@ -146,6 +135,17 @@ private struct DeveloperMenuView: View {
 
 // MARK: - Spotify 로그인 영역
 
+/// Spotify 칸에 보일 버튼 하나 (로그인 상태면 로그아웃, 아니면 로그인)
+nonisolated enum SpotifyButton: Equatable {
+    case login(enabled: Bool)
+    case logout
+
+    /// 로그인돼 있으면 설정과 무관하게 로그아웃만, 아니면 설정(Client ID)이 있을 때만 로그인 버튼 활성
+    static func make(isLoggedIn: Bool, isConfigured: Bool) -> SpotifyButton {
+        isLoggedIn ? .logout : .login(enabled: isConfigured)
+    }
+}
+
 private struct SpotifySection: View {
     @ObservedObject var auth: SpotifyAuth
     let onLogin: () -> Void
@@ -153,24 +153,70 @@ private struct SpotifySection: View {
 
     var body: some View {
         Section("Spotify") {
-            if auth.isLoggedIn {
-                LabeledContent("상태", value: "로그인됨 ✅")
+            // 로그아웃 버튼이 보이면 로그인 상태라는 뜻이라 상태 줄은 따로 두지 않아요 (작업 018)
+            switch SpotifyButton.make(isLoggedIn: auth.isLoggedIn, isConfigured: SpotifyConfig.isConfigured) {
+            case .logout:
                 Button("로그아웃", role: .destructive, action: onLogout)
-            } else {
+            case .login(let enabled):
                 Button("Spotify로 로그인", action: onLogin)
-                    .disabled(!SpotifyConfig.isConfigured)
+                    .disabled(!enabled)
             }
         }
     }
 }
 
+// MARK: - 시작/정지
+
+/// [시작] 버튼 상태 (작업 018 검토 2차: 로그아웃이면 회색)
+nonisolated struct StartButton: Equatable {
+    let enabled: Bool
+    let hint: String?
+
+    /// 로그아웃이면 비활성 + 로그인 안내, 로그인됐지만 다른 준비 항목이 ❌이면 활성 + 확인 안내
+    static func make(isLoggedIn: Bool, hasProblem: Bool) -> StartButton {
+        if !isLoggedIn {
+            return StartButton(enabled: false, hint: "Spotify에 로그인하면 시작할 수 있어요")
+        }
+        return StartButton(enabled: true, hint: hasProblem ? "준비 상태를 먼저 확인해 주세요" : nil)
+    }
+}
+
+/// auth·readiness를 직접 관찰해서 로그인/로그아웃하자마자 [시작] 상태가 바뀌도록 따로 뺀 칸
+private struct StartStopSection: View {
+    @ObservedObject var auth: SpotifyAuth
+    @ObservedObject var readiness: ReadinessModel
+    let isRunning: Bool
+    let onStart: () -> Void
+    let onStop: () -> Void
+
+    var body: some View {
+        Section {
+            if isRunning {
+                Button("정지", role: .destructive, action: onStop)
+            } else {
+                let start = StartButton.make(isLoggedIn: auth.isLoggedIn, hasProblem: readiness.hasProblem)
+                // 위치 권한 등 다른 항목이 ❌여도 막지는 않음 (시작할 때 필요한 것을 다시 확인함)
+                Button("시작", action: onStart)
+                    .disabled(!start.enabled)
+                if let hint = start.hint {
+                    Text(hint)
+                        .font(.caption).foregroundStyle(.orange)
+                }
+            }
+        } footer: {
+            Text("앱을 열면 준비가 돼 있을 때 자동으로 시작해요. [정지]를 누르면 [시작]을 다시 누를 때까지 자동으로 시작하지 않아요.")
+        }
+    }
+}
+
 // MARK: - 준비 상태 (작업 004)
-// 전부 ✅이면 "✅ 준비 완료" 한 줄만 보이고(눌러서 펼치기), 하나라도 ❌이면 자동으로 펼쳐서 ❌를 위에 보여 줘요.
+// 항상 닫힌 상태가 기본이고, 사용자가 눌렀을 때만 펼쳐요 (저절로 펼치지 않음, 작업 018 검토 1차).
+// 라벨은 3단계: 전부 ✅ → "✅ 준비 완료" / ✅·❌ 섞임 → "⚠️ 준비가 덜 됐어요 (n개)" / 전부 ❌ → "❌ 준비가 안 됐어요 (n개)"
 
 private struct ReadinessSection: View {
     @ObservedObject var model: ReadinessModel
     let onFix: (ReadinessItem.Fix) -> Void
-    @State private var expanded = false
+    @State private var expanded = false   // 기본은 닫힘
 
     var body: some View {
         Section {
@@ -179,19 +225,19 @@ private struct ReadinessSection: View {
                     ReadinessRow(item: item, onFix: onFix)
                 }
             } label: {
-                if model.hasProblem {
-                    Text("⚠️ 준비가 덜 됐어요 (\(model.problemCount)개)")
-                        .font(.headline).foregroundStyle(.orange)
-                } else {
+                switch ReadinessModel.summary(model.items) {
+                case .ready:
                     Text("✅ 준비 완료").font(.headline)
+                case .partial(let problems):
+                    Text("⚠️ 준비가 덜 됐어요 (\(problems)개)")
+                        .font(.headline).foregroundStyle(.orange)
+                case .notReady(let problems):
+                    Text("❌ 준비가 안 됐어요 (\(problems)개)")
+                        .font(.headline).foregroundStyle(.red)
                 }
             }
         } header: {
             Text("준비 상태")
-        }
-        .onAppear { expanded = model.hasProblem }
-        .onChange(of: model.hasProblem) { problem in
-            if problem { expanded = true }   // ❌가 생기면 자동으로 펼침
         }
     }
 }
