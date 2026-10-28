@@ -99,9 +99,10 @@ private struct DeveloperMenuView: View {
                     .disabled(controller.isRunning || !controller.auth.isLoggedIn)
             }
 
+            // 부모가 다시 그려질 때(로그 추가 등) 값을 새로 계산해 넘김 → 메뉴를 열어 둔 동안에도 숫자가 갱신됨
             Section {
-                ApiUsageRow(title: "오늘", daysAgo: 0)
-                ApiUsageRow(title: "어제", daysAgo: 1)
+                UsageRow(title: "오늘", total: APIUsage.total(daysAgo: 0), summary: APIUsage.summary(daysAgo: 0))
+                UsageRow(title: "어제", total: APIUsage.total(daysAgo: 1), summary: APIUsage.summary(daysAgo: 1))
                 if let until = SpotifyBlock.until {
                     Text("⛔️ 한도 차단 중 — \(SpotifyBlock.untilText(until)) 이후 재개")
                         .font(.caption).foregroundStyle(.red)
@@ -113,9 +114,8 @@ private struct DeveloperMenuView: View {
             }
 
             Section {
-                // 부모가 다시 그려질 때(로그 추가 등) 값을 새로 계산해 넘김
-                LrclibUsageRow(title: "오늘", total: LrclibUsage.total(daysAgo: 0), summary: LrclibUsage.summary(daysAgo: 0))
-                LrclibUsageRow(title: "어제", total: LrclibUsage.total(daysAgo: 1), summary: LrclibUsage.summary(daysAgo: 1))
+                UsageRow(title: "오늘", total: LrclibUsage.total(daysAgo: 0), summary: LrclibUsage.summary(daysAgo: 0))
+                UsageRow(title: "어제", total: LrclibUsage.total(daysAgo: 1), summary: LrclibUsage.summary(daysAgo: 1))
             } header: {
                 Text("LRCLIB 호출 수")
             } footer: {
@@ -352,21 +352,8 @@ private struct SongRow: View {
     }
 }
 
-/// 하루 호출 수 한 줄: "오늘  128회" + 종류별 합계
-private struct ApiUsageRow: View {
-    let title: String
-    let daysAgo: Int
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            LabeledContent(title, value: "\(APIUsage.total(daysAgo: daysAgo))회")
-            Text(APIUsage.summary(daysAgo: daysAgo))
-                .font(.caption).foregroundStyle(.secondary)
-        }
-    }
-}
-
-private struct LrclibUsageRow: View {
+/// 하루 호출 수 한 줄: "오늘  128회" + 종류별 합계 (Spotify·LRCLIB 공통, 값은 부모가 계산해 넘김)
+private struct UsageRow: View {
     let title: String
     let total: Int
     let summary: String

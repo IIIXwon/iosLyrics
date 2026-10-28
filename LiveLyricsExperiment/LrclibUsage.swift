@@ -17,28 +17,20 @@ nonisolated enum LrclibUsage {
         }
     }
 
-    private static let key = "lrclibCallCounts"   // [날짜 "2026-10-28": [종류·minute·minuteCount·peak: 값]]
+    // [날짜 "2026-10-28": [종류·minute·minuteCount·peak: 값]]
+    private static let store = DailyUsageStore(key: "lrclibCallCounts")
     private static let minuteKey = "minute"        // 현재 분 (HH*60+mm)
     private static let minuteCountKey = "minuteCount"
     private static let peakKey = "peak"
-    private static let lock = NSLock()
 
-    /// 실제로 요청을 보내기 직전에 1회 기록
+    /// 서버가 응답한 요청마다 1회 기록 (상태 코드 무관, 응답이 없던 요청은 세지 않음)
     static func record(_ kind: Kind) {
-        lock.lock()
-        defer { lock.unlock() }   // 읽기-수정-쓰기가 겹쳐 횟수가 사라지지 않게
-        let now = Date()          // 날짜 키와 분 키를 같은 시각으로 계산
-        var all = load()
-        let today = dayKey(daysAgo: 0, from: now)
-        var day = all[today] ?? [:]
-        day[kind.rawValue, default: 0] += 1
-        let c = Calendar.current.dateComponents([.hour, .minute], from: now)
-        day = updatedPeak(day, minute: String(format: "%02d:%02d", c.hour ?? 0, c.minute ?? 0))
-        all[today] = day
-        // 최근 7일만 남김
-        let keep = Set(all.keys.sorted().suffix(7))
-        all = all.filter { keep.contains($0.key) }
-        UserDefaults.standard.set(all, forKey: key)
+        // now: 날짜 키와 같은 시각으로 분 키를 계산
+        store.update { day, now in
+            day[kind.rawValue, default: 0] += 1
+            let c = Calendar.current.dateComponents([.hour, .minute], from: now)
+            day = updatedPeak(day, minute: String(format: "%02d:%02d", c.hour ?? 0, c.minute ?? 0))
+        }
     }
 
     /// 순수 함수: 이번 호출의 분 키("10:00")로 minute·minuteCount·peak를 갱신 (종류별 횟수 키는 그대로)
@@ -57,7 +49,7 @@ nonisolated enum LrclibUsage {
 
     /// daysAgo일 전(0 = 오늘)의 종류별 호출 수
     static func counts(daysAgo: Int) -> [Kind: Int] {
-        let day = load()[dayKey(daysAgo: daysAgo)] ?? [:]
+        let day = store.day(daysAgo: daysAgo)
         var result: [Kind: Int] = [:]
         for kind in Kind.allCases { result[kind] = day[kind.rawValue] ?? 0 }
         return result
@@ -69,7 +61,7 @@ nonisolated enum LrclibUsage {
 
     /// 그날 가장 많이 부른 1분의 호출 수
     static func peak(daysAgo: Int) -> Int {
-        load()[dayKey(daysAgo: daysAgo)]?[peakKey] ?? 0
+        store.day(daysAgo: daysAgo)[peakKey] ?? 0
     }
 
     /// "정확 조회 4 · 검색 8 · 1분 최고 5회"
@@ -77,15 +69,5 @@ nonisolated enum LrclibUsage {
         let counts = counts(daysAgo: daysAgo)
         let kinds = Kind.allCases.map { "\($0.label) \(counts[$0] ?? 0)" }
         return (kinds + ["1분 최고 \(peak(daysAgo: daysAgo))회"]).joined(separator: " · ")
-    }
-
-    private static func load() -> [String: [String: Int]] {
-        UserDefaults.standard.dictionary(forKey: key) as? [String: [String: Int]] ?? [:]
-    }
-
-    private static func dayKey(daysAgo: Int, from now: Date = Date()) -> String {
-        let date = Calendar.current.date(byAdding: .day, value: -daysAgo, to: now) ?? now
-        let c = Calendar.current.dateComponents([.year, .month, .day], from: date)
-        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
     }
 }
