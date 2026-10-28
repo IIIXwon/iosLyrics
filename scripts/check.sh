@@ -22,11 +22,16 @@ done < <(grep -rlE --include='*.swift' 'ObservableObject' "${SRC[@]}" || true)
 if [ -z "$missing" ]; then ok "ObservableObject 파일에 import Combine 있음"
 else bad "import Combine 없음" "$missing"; fi
 
-# 3. 제외된 방식·SDK 흔적 (⛔, decisions: 무음 오디오로 백그라운드 유지, Spotify iOS SDK)
-pattern='SilentAudio|SPTAppRemote|SpotifyiOS|app-remote-control'
-hits=$(grep -rnE "$pattern" "${SRC[@]}" LiveLyricsExperiment.xcodeproj/project.pbxproj || true)
-if [ -z "$hits" ]; then ok "제외된 방식·SDK 흔적 없음"
-else bad "제외된 방식·SDK 흔적이 있음" "$hits"; fi
+# 3. 제외된 방식 (⛔ 무음 오디오로 백그라운드 유지)
+hits=$(grep -rnE 'SilentAudio' "${SRC[@]}" LiveLyricsExperiment.xcodeproj/project.pbxproj || true)
+if [ -z "$hits" ]; then ok "제외된 방식 흔적 없음"
+else bad "제외된 방식 흔적이 있음" "$hits"; fi
+
+# 3-1. Spotify iOS SDK는 SpotifyRemote.swift에서만 (작업 025: 보조 출처, 감싸는 파일 하나)
+hits=$(grep -rnE --include='*.swift' 'SPTAppRemote|import SpotifyiOS' "${SRC[@]}" \
+  | grep -v '^Spotify/SpotifyRemote.swift:' || true)
+if [ -z "$hits" ]; then ok "Spotify iOS SDK는 SpotifyRemote.swift에만 있음"
+else bad "SpotifyRemote.swift 밖에서 Spotify iOS SDK를 씀" "$hits"; fi
 
 # 4. Spotify Client ID가 git에 들어가지 않는지 (스테이징된 내용 기준)
 hits=""
