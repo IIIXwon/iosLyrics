@@ -22,21 +22,17 @@ nonisolated enum APIUsage {
         }
     }
 
-    private static let key = "spotifyAPICallCounts"   // [날짜 "2026-10-27": [종류: 횟수]]
+    // [날짜 "2026-10-27": [종류: 횟수]] — 키 이름·형식은 기존 기록이 그대로 읽히도록 유지
+    private static let store = DailyUsageStore(key: "spotifyAPICallCounts")
 
     /// 실제로 요청을 보내기 직전에 1회 기록
     static func record(_ kind: Kind) {
-        var all = load()
-        all[dayKey(daysAgo: 0), default: [:]][kind.rawValue, default: 0] += 1
-        // 최근 7일만 남김
-        let keep = Set(all.keys.sorted().suffix(7))
-        all = all.filter { keep.contains($0.key) }
-        UserDefaults.standard.set(all, forKey: key)
+        store.update { day, _ in day[kind.rawValue, default: 0] += 1 }
     }
 
     /// daysAgo일 전(0 = 오늘)의 종류별 호출 수
     static func counts(daysAgo: Int) -> [Kind: Int] {
-        let day = load()[dayKey(daysAgo: daysAgo)] ?? [:]
+        let day = store.day(daysAgo: daysAgo)
         var result: [Kind: Int] = [:]
         for kind in Kind.allCases { result[kind] = day[kind.rawValue] ?? 0 }
         return result
@@ -50,16 +46,6 @@ nonisolated enum APIUsage {
     static func summary(daysAgo: Int) -> String {
         let counts = counts(daysAgo: daysAgo)
         return Kind.allCases.map { "\($0.label) \(counts[$0] ?? 0)" }.joined(separator: " · ")
-    }
-
-    private static func load() -> [String: [String: Int]] {
-        UserDefaults.standard.dictionary(forKey: key) as? [String: [String: Int]] ?? [:]
-    }
-
-    private static func dayKey(daysAgo: Int) -> String {
-        let date = Calendar.current.date(byAdding: .day, value: -daysAgo, to: Date()) ?? Date()
-        let c = Calendar.current.dateComponents([.year, .month, .day], from: date)
-        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
     }
 }
 

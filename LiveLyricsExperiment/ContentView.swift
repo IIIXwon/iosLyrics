@@ -99,9 +99,10 @@ private struct DeveloperMenuView: View {
                     .disabled(controller.isRunning || !controller.auth.isLoggedIn)
             }
 
+            // 부모가 다시 그려질 때(로그 추가 등) 값을 새로 계산해 넘김 → 메뉴를 열어 둔 동안에도 숫자가 갱신됨
             Section {
-                ApiUsageRow(title: "오늘", daysAgo: 0)
-                ApiUsageRow(title: "어제", daysAgo: 1)
+                UsageRow(title: "오늘", total: APIUsage.total(daysAgo: 0), summary: APIUsage.summary(daysAgo: 0))
+                UsageRow(title: "어제", total: APIUsage.total(daysAgo: 1), summary: APIUsage.summary(daysAgo: 1))
                 if let until = SpotifyBlock.until {
                     Text("⛔️ 한도 차단 중 — \(SpotifyBlock.untilText(until)) 이후 재개")
                         .font(.caption).foregroundStyle(.red)
@@ -110,6 +111,15 @@ private struct DeveloperMenuView: View {
                 Text("Spotify 호출 수")
             } footer: {
                 Text("Spotify Web API를 실제로 보낸 횟수예요 (LRCLIB 제외). 한도 초과가 있었는지 확인할 때 쓰세요.")
+            }
+
+            Section {
+                UsageRow(title: "오늘", total: LrclibUsage.total(daysAgo: 0), summary: LrclibUsage.summary(daysAgo: 0))
+                UsageRow(title: "어제", total: LrclibUsage.total(daysAgo: 1), summary: LrclibUsage.summary(daysAgo: 1))
+            } header: {
+                Text("LRCLIB 호출 수")
+            } footer: {
+                Text("가사 서버(LRCLIB)에 실제로 보낸 횟수예요. 한도는 1분에 약 90회예요.")
             }
 
             Section {
@@ -342,15 +352,16 @@ private struct SongRow: View {
     }
 }
 
-/// 하루 호출 수 한 줄: "오늘  128회" + 종류별 합계
-private struct ApiUsageRow: View {
+/// 하루 호출 수 한 줄: "오늘  128회" + 종류별 합계 (Spotify·LRCLIB 공통, 값은 부모가 계산해 넘김)
+private struct UsageRow: View {
     let title: String
-    let daysAgo: Int
+    let total: Int
+    let summary: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            LabeledContent(title, value: "\(APIUsage.total(daysAgo: daysAgo))회")
-            Text(APIUsage.summary(daysAgo: daysAgo))
+            LabeledContent(title, value: "\(total)회")
+            Text(summary)
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
