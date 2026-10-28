@@ -41,9 +41,12 @@ final class ExperimentController: ObservableObject {
     // Spotify iOS SDK — 보조 출처 (작업 025). 연결돼 있으면 이벤트로 바로 반영, 끊기면 3초 폴링 그대로
     let remote: SpotifyRemote
     private var remoteLastAttempt: TimeInterval?   // 마지막 연결 시도 시각 (기기 가동 시간 기준)
-    private var remoteLastFailure: String?          // 같은 이유의 실패 로그를 연속으로 남기지 않으려고
-    private var remoteAttemptCount = 0               // SDK 연결 시도 번호 (진단 로그용, 025 검토 1차)
+    private var remoteLastFailure: String?          // 마지막 실패 키(domain+code). 같은 키의 실패 로그를 연속으로 남기지 않으려고
+    private var remoteAttemptCount = 0               // SDK 연결 시도 번호 (진단 로그용, 025 검토 1차). 추적 세션마다 0부터
     private var remoteScopeWarned = false            // "app-remote-control 권한 없음" 경고를 이미 남겼는지
+    private var remoteLastOutcome: String?           // 직전 시도 결과: "성공" 또는 실패 키 (백그라운드 시도 줄을 남길지 판단용)
+    private var remoteBackgroundLogged = false       // 이번 세션에 백그라운드 시도 줄을 남긴 적 있는지
+    private var remoteOutcomeAtBackgroundLog: String? // 마지막으로 백그라운드 시도 줄을 남길 때의 직전 결과
 
     private var activity: Activity<LyricsActivityAttributes>?
     private var activityUpdates = 0
@@ -102,7 +105,7 @@ final class ExperimentController: ObservableObject {
         nowPlaying.onBlocked = { [weak self] until, body in self?.handleQuotaBlock(until: until, body: body) }
         remote.onState = { [weak self] in self?.nowPlaying.applyRemote($0) }
         remote.onConnectionChange = { [weak self] in self?.remoteConnectionChanged($0) }
-        remote.onFailure = { [weak self] in self?.remoteConnectFailed($0) }
+        remote.onFailure = { [weak self] in self?.remoteConnectFailed($0, key: $1) }
         remote.onLog = { [weak self] in self?.log($0) }
 
         if !SpotifyConfig.isConfigured {
@@ -273,6 +276,12 @@ final class ExperimentController: ObservableObject {
         location.stop()
         remote.disconnect()
         remoteLastAttempt = nil
+        remoteLastFailure = nil
+        remoteAttemptCount = 0
+        remoteScopeWarned = false
+        remoteLastOutcome = nil
+        remoteBackgroundLogged = false
+        remoteOutcomeAtBackgroundLog = nil
         isRunning = false
         log("⏹ 정지 (조회 \(nowPlaying.pollCount)회, 카드 갱신 \(activityUpdates)회, 갱신 생략 \(skippedUpdates)회)")
     }
@@ -1203,31 +1212,59 @@ final class ExperimentController: ObservableObject {
     /// SDK 연결 시도. foreground(추적 시작·화면 복귀)면 항상, 아니면 마지막 시도 후 60초가 지났을 때만 (RemoteRetry)
     private func tryRemoteConnect(foreground: Bool) {
         guard isRunning, auth.isLoggedIn, !remote.isConnected, !remote.isConnecting else { return }
-        // 토큰에 app-remote-control 권한이 없으면 연결해도 실패하므로 시도하지 않음 (경고는 1번만)
-        guard auth.hasScope(Self.remoteScope) else {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard RemoteRetry.shouldTry(now: now, lastAttempt: remoteLastAttempt, foreground: foreground) else { return }
+        remoteLastAttempt = now   // 권한 부족으로 막혀도 다음 백그라운드 확인은 60초 뒤
+        // 권한이 없으면 연결해도 실패하므로 시도하지 않음 (경고는 1번만)
+        if let reason = remoteScopeBlockReason() {
             if !remoteScopeWarned {
                 remoteScopeWarned = true
-                log("⚠️ SDK 연결 불가 — 다시 로그인 필요 (\(Self.remoteScope) 권한 없음)")
+                log("⚠️ SDK 연결 불가 — 다시 로그인 필요 (\(reason))")
             }
             return
         }
         remoteScopeWarned = false
-        let now = ProcessInfo.processInfo.systemUptime
-        guard RemoteRetry.shouldTry(now: now, lastAttempt: remoteLastAttempt, foreground: foreground) else { return }
-        remoteLastAttempt = now
         remoteAttemptCount += 1
-        log("⚡ SDK 연결 시도 #\(remoteAttemptCount) (\(appStateName())) — \(remoteDiagnostics())")
+        // 앱 화면 시도는 항상, 백그라운드 시도는 세션 첫 번째이거나 직전 결과가 바뀌었을 때만 줄을 남김
+        if foreground || !remoteBackgroundLogged || remoteLastOutcome != remoteOutcomeAtBackgroundLog {
+            if !foreground {
+                remoteBackgroundLogged = true
+                remoteOutcomeAtBackgroundLog = remoteLastOutcome
+            }
+            log("⚡ SDK 연결 시도 #\(remoteAttemptCount) (\(appStateName())) — \(remoteDiagnostics())")
+        }
         remote.connect()
     }
 
     private static let remoteScope = "app-remote-control"
 
+    /// SDK 연결을 막을 권한 문제 (없으면 nil)
+    /// - 토큰 응답의 실제 scope를 알면 그것만 봄
+    /// - 아직 모르면(토큰 응답 전) 로그인 때 요청한 권한 기준의 `needsRelogin`으로 판단
+    private func remoteScopeBlockReason() -> String? {
+        if let scopes = auth.tokenScopes {
+            return scopes.contains(Self.remoteScope) ? nil : "토큰에 \(Self.remoteScope) 권한 없음"
+        }
+        return auth.needsRelogin ? "로그인 때 받은 권한이 부족" : nil
+    }
+
+    /// 지금 토큰의 실제 권한에 app-remote-control이 있는지 한 줄로. ⚠️ 토큰 값은 넣지 않음 (권한 유무만)
+    private func remoteScopeText(unknown: String = "모름") -> String {
+        let state: String
+        if let scopes = auth.tokenScopes {
+            state = scopes.contains(Self.remoteScope) ? "있음" : "없음"
+        } else {
+            state = unknown
+        }
+        return "토큰 scope \(Self.remoteScope) \(state)"
+    }
+
     /// 연결 시도 줄의 진단 정보. ⚠️ 토큰 값은 절대 넣지 않음 (권한 유무·남은 시간만)
     private func remoteDiagnostics() -> String {
-        let scope = "토큰 scope \(Self.remoteScope) \(auth.hasScope(Self.remoteScope) ? "있음" : "없음")"
+        let scope = remoteScopeText(unknown: "모름(아직 토큰 응답 없음)")
         let remaining: String
         if let seconds = auth.accessTokenRemaining {
-            remaining = "남은 유효 \(max(0, Int(seconds / 60)))분"
+            remaining = seconds < 60 ? "남은 유효 곧 만료(연결 때 갱신)" : "남은 유효 \(Int(seconds / 60))분"
         } else {
             remaining = "남은 유효 없음(연결 때 새로 받음)"
         }
@@ -1244,7 +1281,8 @@ final class ExperimentController: ObservableObject {
         nowPlaying.remoteConnected = connected
         if connected {
             remoteLastFailure = nil
-            log("⚡ SDK 연결됨 — 폴링 완화(재생 중 \(Int(PollTiming.connectedPlaying))초)")
+            remoteLastOutcome = "성공"
+            log("⚡ SDK 연결됨 — 폴링 완화(재생 중 \(Int(PollTiming.connectedPlaying))초) · \(remoteScopeText())")
         } else if remote.lastDisconnectByUser {
             // 정지·강제 종료로 우리가 끊은 경우 (폴링도 함께 멈추므로 "3초 폴링 복귀"가 아님)
             log("⚡ SDK 연결 끊음 (\(remote.lastError ?? "정지"))")
@@ -1253,11 +1291,12 @@ final class ExperimentController: ObservableObject {
         }
     }
 
-    /// 연결 실패 로그는 같은 이유가 연속이면 1번만
-    private func remoteConnectFailed(_ reason: String) {
-        guard reason != remoteLastFailure else { return }
-        remoteLastFailure = reason
-        log("⚡ SDK 연결 실패: \(reason) (\(appStateName()))")
+    /// 연결 실패 로그는 같은 실패(키 = 오류 domain+code, 토큰 단계는 "토큰"+HTTP 상태)가 연속이면 1번만. 문구는 상세 그대로
+    private func remoteConnectFailed(_ reason: String, key: String) {
+        remoteLastOutcome = key
+        guard key != remoteLastFailure else { return }
+        remoteLastFailure = key
+        log("⚡ SDK 연결 실패 #\(remoteAttemptCount): \(reason) (\(appStateName())) · \(remoteScopeText())")
     }
 
     // MARK: - 로그

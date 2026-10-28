@@ -14,8 +14,8 @@ final class SpotifyRemote: NSObject {
     var onState: (@MainActor (RemoteSnapshot?) -> Void)?
     /// 연결됨(true) / 끊김(false). 끊긴 이유는 `lastError`
     var onConnectionChange: (@MainActor (Bool) -> Void)?
-    /// 연결 시도가 실패했을 때 (이유)
-    var onFailure: (@MainActor (String) -> Void)?
+    /// 연결 시도가 실패했을 때 (이유 상세, 같은 실패인지 비교할 키 — 오류 domain+code / 토큰 단계는 "토큰"+HTTP 상태)
+    var onFailure: (@MainActor (String, String) -> Void)?
     var onLog: (@MainActor (String) -> Void)?
 
     /// 마지막 끊김·실패 이유 (로그용)
@@ -71,7 +71,7 @@ final class SpotifyRemote: NSObject {
             } catch {
                 guard isConnecting, attempt == current else { return }
                 endAttempt()
-                fail("토큰: \(Self.describe(error))")
+                fail("토큰: \(Self.describe(error))", key: Self.tokenFailureKey(error))
             }
         }
     }
@@ -101,7 +101,7 @@ final class SpotifyRemote: NSObject {
             try? await Task.sleep(nanoseconds: nanos)
             guard !Task.isCancelled, let self, self.isConnecting, self.attempt == current else { return }
             self.endAttempt()
-            self.fail("시간 초과")
+            self.fail("시간 초과", key: "시간 초과")
         }
     }
 
@@ -117,9 +117,22 @@ final class SpotifyRemote: NSObject {
         return "\(ns.localizedDescription) [\(detail)]"
     }
 
-    private func fail(_ reason: String) {
+    /// 같은 실패인지 비교할 키: `domain#code` (설명 문구는 빼서, 문구만 다른 같은 오류를 한 번만 남기게)
+    nonisolated static func failureKey(_ error: Error?) -> String {
+        guard let error else { return "이유 없음" }
+        let ns = error as NSError
+        return "\(ns.domain)#\(ns.code)"
+    }
+
+    /// 토큰 단계 실패 키: HTTP 오류면 `토큰#HTTP상태`, 그 밖(네트워크 등)은 `토큰#domain#code`
+    nonisolated static func tokenFailureKey(_ error: Error) -> String {
+        if case SpotifyAuthError.tokenFailed(let status, _) = error { return "토큰#HTTP\(status)" }
+        return "토큰#" + failureKey(error)
+    }
+
+    private func fail(_ reason: String, key: String) {
         lastError = reason
-        onFailure?(reason)
+        onFailure?(reason, key)
     }
 
     // MARK: - 연결 뒤 구독
@@ -177,13 +190,14 @@ extension SpotifyRemote: SPTAppRemoteDelegate {
 
     nonisolated func appRemote(_ appRemote: SPTAppRemote, didFailConnectionAttemptWithError error: Error?) {
         let text = Self.describe(error)
+        let key = Self.failureKey(error)
         Task { @MainActor in
             self.endAttempt()
             if self.userDisconnectReason != nil {   // 우리가 끊는 중이었음 → 실패로 알리지 않음
                 self.userDisconnectReason = nil
                 return
             }
-            self.fail(text)
+            self.fail(text, key: key)
         }
     }
 
