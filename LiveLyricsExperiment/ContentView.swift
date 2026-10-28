@@ -70,10 +70,6 @@ struct ContentView: View {
     /// 준비 상태의 [해결] 버튼이 하는 일
     private func handle(_ fix: ReadinessItem.Fix) {
         switch fix {
-        case .login:
-            // 권한이 추가돼서 다시 로그인해야 하는 경우엔 먼저 로그아웃
-            if controller.auth.isLoggedIn { controller.logout() }
-            Task { await controller.login(using: webAuthenticationSession) }
         case .openSettings:
             if let url = URL(string: UIApplication.openSettingsURLString) {
                 UIApplication.shared.open(url)
@@ -177,12 +173,13 @@ private struct SpotifySection: View {
 }
 
 // MARK: - 준비 상태 (작업 004)
-// 전부 ✅이면 "✅ 준비 완료" 한 줄만 보이고(눌러서 펼치기), 하나라도 ❌이면 자동으로 펼쳐서 ❌를 위에 보여 줘요.
+// 항상 닫힌 상태가 기본이고, 사용자가 눌렀을 때만 펼쳐요 (저절로 펼치지 않음, 작업 018 검토 1차).
+// 라벨은 3단계: 전부 ✅ → "✅ 준비 완료" / ✅·❌ 섞임 → "⚠️ 준비가 덜 됐어요 (n개)" / 전부 ❌ → "❌ 준비가 안 됐어요 (n개)"
 
 private struct ReadinessSection: View {
     @ObservedObject var model: ReadinessModel
     let onFix: (ReadinessItem.Fix) -> Void
-    @State private var expanded = false
+    @State private var expanded = false   // 기본은 닫힘
 
     var body: some View {
         Section {
@@ -191,19 +188,19 @@ private struct ReadinessSection: View {
                     ReadinessRow(item: item, onFix: onFix)
                 }
             } label: {
-                if model.hasProblem {
-                    Text("⚠️ 준비가 덜 됐어요 (\(model.problemCount)개)")
-                        .font(.headline).foregroundStyle(.orange)
-                } else {
+                switch ReadinessModel.summary(model.items) {
+                case .ready:
                     Text("✅ 준비 완료").font(.headline)
+                case .partial(let problems):
+                    Text("⚠️ 준비가 덜 됐어요 (\(problems)개)")
+                        .font(.headline).foregroundStyle(.orange)
+                case .none(let problems):
+                    Text("❌ 준비가 안 됐어요 (\(problems)개)")
+                        .font(.headline).foregroundStyle(.red)
                 }
             }
         } header: {
             Text("준비 상태")
-        }
-        .onAppear { expanded = model.hasProblem }
-        .onChange(of: model.hasProblem) { problem in
-            if problem { expanded = true }   // ❌가 생기면 자동으로 펼침
         }
     }
 }
