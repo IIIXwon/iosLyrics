@@ -20,7 +20,42 @@ struct NowPlaying: Equatable {
     /// 지금 재생 위치 (초)
     func position(at now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> TimeInterval {
         guard isPlaying else { return progress }
-        return min(duration, max(0, progress + (now - stamp)))
+        return min(duration, max(0, estimatedPosition(at: now)))
+    }
+
+    /// 곡 끝까지 남은 시간(초). 곡 길이로 자르지 않아서 끝났으면 음수 (PollTiming.wait에 넘김, 작업 021)
+    /// 재생 중이 아니거나 곡 길이를 모르면(0 이하) nil
+    func remaining(at now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> TimeInterval? {
+        guard isPlaying, duration > 0 else { return nil }
+        return duration - estimatedPosition(at: now)
+    }
+
+    /// 마지막으로 받은 위치 + 경과 시간 (자르지 않은 값)
+    private func estimatedPosition(at now: TimeInterval) -> TimeInterval {
+        progress + (now - stamp)
+    }
+}
+
+/// 곡 끝 무렵 다음 조회까지 기다릴 시간 (작업 021)
+nonisolated enum PollTiming {
+    /// 곡이 끝났는데 Spotify가 아직 같은 곡을 줄 때 다시 볼 간격(초)
+    static let endRecheck: TimeInterval = 1
+    /// 끝난 뒤 이 시간(초)까지만 endRecheck 간격으로 다시 봄
+    static let endRecheckLimit: TimeInterval = 5
+    /// remaining: 곡 끝까지 남은 시간(자르지 않은 값, 끝났으면 음수). 재생 중이 아니면 nil
+    /// - nil → base
+    /// - 0 < remaining, remaining + 0.5 < base → remaining + 0.5
+    /// - -endRecheckLimit < remaining ≤ 0 → min(base, endRecheck)
+    /// - 그 밖 → base
+    static func wait(base: TimeInterval, remaining: TimeInterval?) -> TimeInterval {
+        guard let remaining else { return base }
+        if remaining > 0 {
+            return remaining + 0.5 < base ? remaining + 0.5 : base
+        }
+        if remaining > -endRecheckLimit {
+            return min(base, endRecheck)
+        }
+        return base
     }
 }
 
@@ -114,6 +149,7 @@ final class NowPlayingService: ObservableObject {
     private func loop() async {
         while !Task.isCancelled {
             var wait = interval
+            var polled = false   // 이번 회차 조회가 성공했는지 (곡 끝 대기는 성공한 회차에만 적용)
             do {
                 let t0 = uptime
                 let result = try await api.currentlyPlaying()
@@ -121,6 +157,7 @@ final class NowPlayingService: ObservableObject {
                 pollCount += 1
                 handle(result, stamp: (t0 + t1) / 2)   // 요청~응답 중간 시점을 기준으로
                 wait = nextInterval()
+                polled = true
             } catch is CancellationError {
                 break
             } catch SpotifyAPIError.blocked(let until, let body) {
@@ -141,10 +178,10 @@ final class NowPlayingService: ObservableObject {
                 wait = interval * 3
             }
 
-            // 곡이 곧 끝나면 그 직후에 바로 다시 조회 (다음 곡을 빨리 감지)
-            if let c = current, c.isPlaying {
-                let remain = c.duration - c.position()
-                if remain > 0, remain + 0.5 < wait { wait = remain + 0.5 }
+            // 곡이 곧 끝나면 그 직후에 바로 다시 조회하고, 끝났는데 Spotify가 아직 같은 곡을 주면 잠깐 1초 간격으로 다시 봄 (작업 021)
+            // 남은 시간은 곡 길이로 자르지 않은 값 (끝났으면 음수). 조회가 실패한 회차(429 대기·오류 백오프)는 줄이지 않음
+            if polled {
+                wait = PollTiming.wait(base: wait, remaining: current?.remaining(at: uptime))
             }
             try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
         }

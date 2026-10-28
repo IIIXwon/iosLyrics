@@ -360,6 +360,17 @@ nonisolated enum LyricsStore {
     }
 }
 
+/// 다음 곡 가사 미리 받기 판단 (작업 021)
+nonisolated enum LyricsPrefetch {
+    /// 기억해 둘 미리 받은 곡 수
+    static let memory = 20
+
+    /// 다음 곡 key가 비어 있지 않고, 지금 곡과 다르고(반복 재생 등), 이미 시도한 곡이 아니면 true
+    static func shouldPrefetch(nextKey: String, currentKey: String?, tried: Set<String>) -> Bool {
+        !nextKey.isEmpty && nextKey != currentKey && !tried.contains(nextKey)
+    }
+}
+
 // MARK: - LRCLIB 검색
 
 nonisolated enum LyricsService {
@@ -373,7 +384,10 @@ nonisolated enum LyricsService {
     /// 싱크 가사를 최대한 찾아본다. 앞 단계에서 싱크 가사를 찾으면 멈추고,
     /// 일반 가사만 나오면 다음 단계까지 계속 검색해서 싱크 가사를 먼저 찾아본다.
     /// 모든 단계에서 곡 길이 차이는 10초 이내만 채택. 네트워크 오류는 throw
-    static func find(title: String, artist: String, album: String, duration: TimeInterval) async throws -> LyricsResult {
+    /// fast: true면 1단계(get)와 2단계(원래 제목 검색) 요청을 동시에 보냄 (작업 021, 지금 재생 중인 곡용).
+    ///       결과는 지금과 같은 순서(1단계 → 2단계 → 3·4단계 차례로)로 판단. 1단계에서 찾으면 2단계 요청은 취소
+    static func find(title: String, artist: String, album: String, duration: TimeInterval,
+                     fast: Bool = false) async throws -> LyricsResult {
         var plain: LyricsResult?        // 싱크를 못 찾았을 때 쓸 일반 가사 후보
         var isInstrumental = false
         var noResultStages: [Int] = []  // 결과가 아예 없던 단계 (못 찾은 곡 요약용)
@@ -413,6 +427,12 @@ nonisolated enum LyricsService {
             return nil
         }
 
+        // fast면 2단계(원래 제목 검색)를 미리 보내 둠. 판단은 아래에서 차례대로
+        let earlySearch: Task<Data?, Error>? = fast
+            ? Task { try await request("search", ["track_name": title, "artist_name": artist]) }
+            : nil
+        defer { earlySearch?.cancel() }   // 1단계에서 찾았거나 오류로 끝나면 남은 요청 취소
+
         // 1단계: 원래 제목·아티스트·앨범·길이로 정확히 조회
         let exact = try await request("get", [
             "track_name": title, "artist_name": artist,
@@ -434,7 +454,18 @@ nonisolated enum LyricsService {
         var tried = Set<String>()
         for (index, search) in searches.enumerated() {
             guard tried.insert(search.title + "\n" + search.artist).inserted else { continue }
-            guard let data = try await request("search", ["track_name": search.title, "artist_name": search.artist]),
+            let response: Data?
+            if index == 0, let earlySearch {
+                // fast: 미리 보낸 2단계 결과. 기다리는 쪽이 취소되면 미리 보낸 요청도 바로 취소 (Task.value는 취소를 넘겨주지 않음)
+                response = try await withTaskCancellationHandler {
+                    try await earlySearch.value
+                } onCancel: {
+                    earlySearch.cancel()
+                }
+            } else {
+                response = try await request("search", ["track_name": search.title, "artist_name": search.artist])
+            }
+            guard let data = response,
                   let records = try? JSONDecoder().decode([Record].self, from: data) else {
                 noResultStages.append(index + 2)
                 continue
