@@ -136,7 +136,7 @@ final class SpotifyRemote: NSObject, ObservableObject {
         if action != authAction { authAction = action }
     }
 
-    /// [Spotify 앱 연결]·카드 탭 재연결(작업 029)·카드 탭 재승인(세션 만료·갱신 불가, 작업 030):Spotify 앱으로 넘어가 승인 → `livelyrics://callback`으로 돌아옴. 음악은 재생하지 않음
+    /// [Spotify 앱 연결]·카드 탭 재연결(작업 029)·카드 탭 재승인(세션 만료·갱신 불가, 작업 030): Spotify 앱으로 넘어가 승인 → `livelyrics://callback`으로 돌아옴. 음악은 재생하지 않음
     /// - Returns: 승인 요청을 보냈으면 true, 세션 갱신 중이라 건너뛰었으면 false
     @discardableResult
     func authorize() -> Bool {
@@ -185,6 +185,7 @@ final class SpotifyRemote: NSObject, ObservableObject {
     }
 
     /// 새 세션(승인·갱신)을 저장. 실패하면 nil
+    /// 저장에 성공하면 연속 갱신 실패 수를 0으로 → 다음 만료 때 다시 갱신해 봄 (작업 030). authAction은 한 번만 다시 계산
     private func store(_ data: Data?) -> SPTSession? {
         guard let data, let restored = Self.unarchive(data) else {
             onLog?("⚠️ Spotify 앱 승인 세션을 저장하지 못했어요")
@@ -192,15 +193,9 @@ final class SpotifyRemote: NSObject, ObservableObject {
         }
         Keychain.saveData(data, for: Self.sessionKey)
         session = restored
-        updateAuthAction()
-        return restored
-    }
-
-    /// 새 세션을 받았으면(갱신·승인 성공) 연속 갱신 실패 수를 0으로 → 다음 만료 때 다시 갱신해 봄 (작업 030)
-    private func resetRenewFailures() {
-        guard renewFailures != 0 else { return }
         renewFailures = 0
         updateAuthAction()
+        return restored
     }
 
     private static func minutesText(_ seconds: TimeInterval?) -> String {
@@ -221,7 +216,6 @@ final class SpotifyRemote: NSObject, ObservableObject {
         }
         authorizing = nil
         guard store(data) != nil else { return }
-        resetRenewFailures()
         onLog?("⚡ Spotify 앱 승인 완료 (만료까지 \(Self.minutesText(sessionRemaining)))")
         onAuthorized?()
     }
@@ -235,7 +229,6 @@ final class SpotifyRemote: NSObject, ObservableObject {
         renewing = nil
         let renewed = store(data)
         if renewed != nil {
-            resetRenewFailures()
             onLog?("⚡ SDK 세션 갱신됨 (만료까지 \(Self.minutesText(sessionRemaining)))")
         }
         // 갱신을 기다리는 시도가 없으면(시간 초과·끊기로 지워짐) 저장만 함
