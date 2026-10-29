@@ -28,6 +28,14 @@ final class SpotifyRemote: NSObject, ObservableObject {
         case needAuthorize
     }
 
+    /// authorize()를 부른 경로 — 요청 로그 문구만 다름 (작업 030 검토 2차)
+    enum AuthorizeReason {
+        /// 앱의 [Spotify 앱 연결] 버튼 (첫 승인)
+        case button
+        /// 카드 탭 재연결·재승인 (작업 029·030) — 한 번 승인한 뒤라 Spotify를 거쳐 자동으로 돌아옴
+        case cardTap
+    }
+
     /// 플레이어 상태가 바뀔 때 (광고·에피소드·해석 실패면 nil)
     var onState: (@MainActor (RemoteSnapshot?) -> Void)?
     /// 연결됨(true) / 끊김(false). 끊긴 이유는 `lastError`
@@ -106,6 +114,9 @@ final class SpotifyRemote: NSObject, ObservableObject {
     private var sessionManager: SPTSessionManager {
         if let sessionManagerStorage { return sessionManagerStorage }
         let manager = SPTSessionManager(configuration: configuration, delegate: self)
+        // 동의 화면이 매번 뜨는 문제 (작업 030 검토 2차): 기본값에 기대지 않고 명시.
+        // false면 이미 승인한 앱은 Spotify가 확인 화면 없이 바로 돌려보냄 (SDK 헤더: production에선 NO)
+        manager.alwaysShowAuthorizationDialog = false
         manager.session = session   // 복원한 세션으로 갱신(renewSession)할 수 있게
         sessionManagerStorage = manager
         return manager
@@ -137,9 +148,10 @@ final class SpotifyRemote: NSObject, ObservableObject {
     }
 
     /// [Spotify 앱 연결]·카드 탭 재연결(작업 029)·카드 탭 재승인(세션 만료·갱신 불가, 작업 030): Spotify 앱으로 넘어가 승인 → `livelyrics://callback`으로 돌아옴. 음악은 재생하지 않음
+    /// - Parameter reason: 부른 경로 (요청 로그 문구만 다름). 기본값은 [Spotify 앱 연결] 버튼
     /// - Returns: 승인 요청을 보냈으면 true, 세션 갱신 중이라 건너뛰었으면 false
     @discardableResult
-    func authorize() -> Bool {
+    func authorize(reason: AuthorizeReason = .button) -> Bool {
         // 세션 갱신 결과를 기다리는 중이면 승인 요청을 겹치지 않음 (SDK 실패 콜백이 하나라 둘을 구분할 수 없게 됨)
         if isActive(renewing, within: renewStaleAfter) {
             onLog?("⚡ SDK 세션 갱신 중이에요 — 잠시 후 다시 눌러 주세요")
@@ -147,7 +159,12 @@ final class SpotifyRemote: NSObject, ObservableObject {
         }
         renewing = nil
         authorizing = Pending(generation: generation, startedAt: Self.now)
-        onLog?("⚡ Spotify 앱으로 이동해 승인 요청 (음악은 재생하지 않아요)")
+        switch reason {
+        case .button:
+            onLog?("⚡ Spotify 앱으로 이동해 승인 요청 (음악은 재생하지 않아요)")
+        case .cardTap:
+            onLog?("⚡ Spotify 앱 거쳐 자동 재연결 요청 (음악은 재생하지 않아요)")
+        }
         sessionManager.initiateSession(with: .appRemoteControl, options: .clientOnly, campaign: nil)
         return true
     }
@@ -215,8 +232,10 @@ final class SpotifyRemote: NSObject, ObservableObject {
             return
         }
         authorizing = nil
+        // 요청~완료 시간: 동의 화면을 눌러야 했으면 길어짐 (작업 030 검토 2차)
+        let elapsed = max(0, Int(Self.now - pending.startedAt))
         guard store(data) != nil else { return }
-        onLog?("⚡ Spotify 앱 승인 완료 (만료까지 \(Self.minutesText(sessionRemaining)))")
+        onLog?("⚡ Spotify 앱 승인 완료 (만료까지 \(Self.minutesText(sessionRemaining)) · 요청 후 \(elapsed)초)")
         onAuthorized?()
     }
 

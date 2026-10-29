@@ -556,7 +556,7 @@ final class ExperimentController: ObservableObject {
                                       authAction: remote.authAction,
                                       hasSession: remote.hasSession)
         if plan == .reconnect {
-            if remote.authorize() {
+            if remote.authorize(reason: .cardTap) {
                 log("🔗 카드 탭 → SDK 끊김 — Spotify를 잠깐 거쳐 다시 연결 (음악은 재생하지 않아요)")
                 return
             }
