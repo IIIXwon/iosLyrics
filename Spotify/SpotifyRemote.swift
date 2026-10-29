@@ -84,6 +84,10 @@ final class SpotifyRemote: NSObject, ObservableObject {
     private var renewing: Pending?
     /// 세션 갱신 결과를 기다리는 연결 시도 번호 (없으면 nil). 시간 초과·끊기·로그아웃에서 지움
     private var renewingFor: Int?
+    /// 세션 갱신이 연속으로 실패한 횟수 (작업 030). 메모리만 — 앱을 다시 시작하면 0이라 갱신을 다시 시도해 봄
+    /// RemoteAuthPlan.renewGiveUpAfter에 닿으면 갱신을 포기(authAction → needAuthorize) → 카드 탭 승인 왕복으로 새 세션
+    /// 갱신 실패로 세션은 지우지 않음 (지우면 "한 번 승인함"을 잃음)
+    private var renewFailures = 0
 
     /// SDK 설정 — 기존 Client ID·`livelyrics://callback`. tokenSwap/Refresh URL은 nil(SDK가 PKCE로 교환), 재생 URI는 설정하지 않음
     private lazy var configuration: SPTConfiguration = {
@@ -125,12 +129,14 @@ final class SpotifyRemote: NSObject, ObservableObject {
 
     /// 세션 상태로 연결 방법을 다시 계산 (시간이 지나 만료에 가까워졌을 수 있으므로 판단 직전에 부름)
     func updateAuthAction() {
-        let canRenew = !(session?.refreshToken.isEmpty ?? true)
+        // refresh token이 있어도 갱신이 연속 실패하면 갱신을 포기 (작업 030)
+        let canRenew = RemoteAuthPlan.canRenew(hasRefreshToken: !(session?.refreshToken.isEmpty ?? true),
+                                               renewFailures: renewFailures)
         let action = RemoteAuthPlan.action(hasSession: session != nil, expiresIn: sessionRemaining, canRenew: canRenew)
         if action != authAction { authAction = action }
     }
 
-    /// [Spotify 앱 연결]·카드 탭 재연결(작업 029): Spotify 앱으로 넘어가 승인 → `livelyrics://callback`으로 돌아옴. 음악은 재생하지 않음
+    /// [Spotify 앱 연결]·카드 탭 재연결(작업 029)·카드 탭 재승인(세션 만료·갱신 불가, 작업 030):Spotify 앱으로 넘어가 승인 → `livelyrics://callback`으로 돌아옴. 음악은 재생하지 않음
     /// - Returns: 승인 요청을 보냈으면 true, 세션 갱신 중이라 건너뛰었으면 false
     @discardableResult
     func authorize() -> Bool {
@@ -157,6 +163,7 @@ final class SpotifyRemote: NSObject, ObservableObject {
         disconnect(reason: "로그아웃")
         generation += 1
         renewingFor = nil
+        renewFailures = 0   // 작업 030
         session = nil
         sessionManagerStorage?.session = nil   // 아직 안 만들었으면 만들지 않음
         Keychain.delete(Self.sessionKey)
@@ -189,6 +196,13 @@ final class SpotifyRemote: NSObject, ObservableObject {
         return restored
     }
 
+    /// 새 세션을 받았으면(갱신·승인 성공) 연속 갱신 실패 수를 0으로 → 다음 만료 때 다시 갱신해 봄 (작업 030)
+    private func resetRenewFailures() {
+        guard renewFailures != 0 else { return }
+        renewFailures = 0
+        updateAuthAction()
+    }
+
     private static func minutesText(_ seconds: TimeInterval?) -> String {
         guard let seconds else { return "알 수 없음" }
         return "\(max(0, Int(seconds / 60)))분"
@@ -207,6 +221,7 @@ final class SpotifyRemote: NSObject, ObservableObject {
         }
         authorizing = nil
         guard store(data) != nil else { return }
+        resetRenewFailures()
         onLog?("⚡ Spotify 앱 승인 완료 (만료까지 \(Self.minutesText(sessionRemaining)))")
         onAuthorized?()
     }
@@ -219,7 +234,10 @@ final class SpotifyRemote: NSObject, ObservableObject {
         }
         renewing = nil
         let renewed = store(data)
-        if renewed != nil { onLog?("⚡ SDK 세션 갱신됨 (만료까지 \(Self.minutesText(sessionRemaining)))") }
+        if renewed != nil {
+            resetRenewFailures()
+            onLog?("⚡ SDK 세션 갱신됨 (만료까지 \(Self.minutesText(sessionRemaining)))")
+        }
         // 갱신을 기다리는 시도가 없으면(시간 초과·끊기로 지워짐) 저장만 함
         guard let current = renewingFor else { return }
         renewingFor = nil
@@ -238,6 +256,12 @@ final class SpotifyRemote: NSObject, ObservableObject {
         if let pending = renewing, pending.generation == generation {
             renewing = nil
             onLog?("⚡ SDK 세션 갱신 실패: \(text)")
+            // 연속 실패 수를 세고, 포기 기준에 막 닿았으면 안내 (작업 030). 세션은 지우지 않음
+            renewFailures += 1
+            updateAuthAction()
+            if renewFailures == RemoteAuthPlan.renewGiveUpAfter {
+                onLog?("⚡ SDK 세션 갱신이 \(renewFailures)번 연속 실패 — 다음 카드 탭 때 Spotify를 잠깐 거쳐 새 세션을 받아요")
+            }
             guard let current = renewingFor else { return }
             renewingFor = nil
             guard isConnecting, attempt == current else { return }
