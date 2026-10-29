@@ -130,17 +130,20 @@ final class SpotifyRemote: NSObject, ObservableObject {
         if action != authAction { authAction = action }
     }
 
-    /// [Spotify 앱 연결]: Spotify 앱으로 넘어가 승인 → `livelyrics://callback`으로 돌아옴. 음악은 재생하지 않음
-    func authorize() {
+    /// [Spotify 앱 연결]·카드 탭 재연결(작업 029): Spotify 앱으로 넘어가 승인 → `livelyrics://callback`으로 돌아옴. 음악은 재생하지 않음
+    /// - Returns: 승인 요청을 보냈으면 true, 세션 갱신 중이라 건너뛰었으면 false
+    @discardableResult
+    func authorize() -> Bool {
         // 세션 갱신 결과를 기다리는 중이면 승인 요청을 겹치지 않음 (SDK 실패 콜백이 하나라 둘을 구분할 수 없게 됨)
         if isActive(renewing, within: renewStaleAfter) {
             onLog?("⚡ SDK 세션 갱신 중이에요 — 잠시 후 다시 눌러 주세요")
-            return
+            return false
         }
         renewing = nil
         authorizing = Pending(generation: generation, startedAt: Self.now)
         onLog?("⚡ Spotify 앱으로 이동해 승인 요청 (음악은 재생하지 않아요)")
         sessionManager.initiateSession(with: .appRemoteControl, options: .clientOnly, campaign: nil)
+        return true
     }
 
     /// Spotify 앱 승인 후 돌아온 주소 처리. SDK가 알아본 주소면 true (결과는 세션 델리게이트로 옴)
@@ -260,9 +263,11 @@ final class SpotifyRemote: NSObject, ObservableObject {
     func connect() -> ConnectStart {
         guard !isConnected, !isConnecting else { return .busy }
         updateAuthAction()
-        guard authAction != .needAuthorize, let session else {
-            return isActive(authorizing, within: authorizeWait) ? .authorizing : .needAuthorize
-        }
+        // 승인 결과를 기다리는 중이면 세션이 있어도 연결하지 않음 (작업 029)
+        // 왕복 뒤 화면 복귀(appBecameActive)가 새 세션보다 먼저 와서 옛 세션으로 연결을 시작하면
+        // isConnecting 때문에 onAuthorized의 연결이 막힘 → 새 세션을 받은 onAuthorized에서 1번 연결
+        if isActive(authorizing, within: authorizeWait) { return .authorizing }
+        guard authAction != .needAuthorize, let session else { return .needAuthorize }
         isConnecting = true
         userDisconnectReason = nil
         attempt += 1

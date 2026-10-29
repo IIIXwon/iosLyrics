@@ -490,7 +490,7 @@ final class ExperimentController: ObservableObject {
         await sendCard(state, key: nowPlaying.current?.key, reason: "위치 추적 끄기 직전 안내")?.value
     }
 
-    // MARK: - 카드 탭 → Spotify 열기 (작업 009, 026: 재생 제어 없음)
+    // MARK: - 카드 탭 → Spotify 열기 (작업 009, 026: 재생 제어 없음) / SDK가 끊겼으면 승인 왕복으로 다시 연결 (작업 029)
 
     /// 위치 추적 재시작. 백그라운드에서 새로 시작이 막힐 수 있어서(권한 "앱 사용 중") 5초 뒤 수신 여부까지 기록
     private func restartLocationForResume() {
@@ -530,10 +530,12 @@ final class ExperimentController: ObservableObject {
     /// 카드 탭 = Spotify 앱 열기만 (작업 026: 재생 요청·기기 조회 없음, 재생은 사용자가 Spotify에서 직접)
     /// Spotify로 넘어가면 우리 앱은 백그라운드가 됨 → 사용자가 재생하는 걸 감지할 수 있도록, 화면에 있는 지금 위치 추적·조회를 다시 켬
     /// 재생이 시작되면 SDK 이벤트(025)나 폴링이 감지해 카드가 다시 갱신됨
+    /// SDK가 끊겼으면 승인 왕복으로 다시 연결 (작업 029): Spotify가 잠깐 열렸다가 `livelyrics://callback`으로 자동 복귀
+    /// → handleOpenURL(callback) → onAuthorized → remoteAuthorized() → tryRemoteConnect(foreground: true). 음악은 재생하지 않음
     private func openSpotify() {
         resumeAfterQuotaBlockIfExpired()   // 앱이 멈춘 사이 한도 차단이 끝났으면 안내를 걷고 조회 재개 (아래 조건 판단 전에)
-        log("🔗 카드 탭 → Spotify 열기 (재생은 Spotify에서 직접)")
         guard let url = URL(string: "spotify:"), UIApplication.shared.canOpenURL(url) else {
+            log("🔗 카드 탭 → Spotify 열기 (재생은 Spotify에서 직접)")
             log("⚠️ Spotify 앱을 열 수 없어요 (설치돼 있지 않음)")
             return
         }
@@ -543,6 +545,16 @@ final class ExperimentController: ObservableObject {
             restartLocationForResume()
             if !nowPlaying.isRunning { nowPlaying.start() }
         }
+        remote.updateAuthAction()   // 시간이 지나 만료에 가까워졌을 수 있으므로 판단 직전에 다시 계산
+        let plan = CardTapPlan.action(isRunning: isRunning, loggedIn: auth.isLoggedIn,
+                                      remoteConnected: remote.isConnected,
+                                      remoteConnecting: remote.isConnecting,
+                                      authAction: remote.authAction)
+        if plan == .reconnect, remote.authorize() {
+            log("🔗 카드 탭 → SDK 끊김 — Spotify를 잠깐 거쳐 다시 연결 (음악은 재생하지 않아요)")
+            return
+        }
+        log("🔗 카드 탭 → Spotify 열기 (재생은 Spotify에서 직접)")
         UIApplication.shared.open(url)
     }
 
