@@ -60,3 +60,23 @@ nonisolated enum RemoteAuthPlan {
         loggedIn && action == .needAuthorize
     }
 }
+
+/// 잠금화면 카드 탭 때 할 일 (작업 029)
+nonisolated enum CardTapPlan {
+    enum Action: Equatable {
+        /// Spotify 앱만 열기 (작업 026 그대로)
+        case openSpotify
+        /// Spotify 승인 왕복(initiateSession .clientOnly, 재생 안 함)으로 SDK 다시 연결
+        case reconnect
+    }
+
+    /// 추적 중 + Web API 로그인 + SDK 미연결 + 승인 세션으로 연결 가능(authAction != .needAuthorize)이면 .reconnect, 그 밖은 .openSpotify
+    /// 연결 시도 중이어도 .reconnect (029 리뷰 수용 A): 카드 탭으로 앱이 열릴 때 화면 복귀가 먼저 와서 옛 세션으로 시도가 시작돼 있을 수 있음
+    /// → 왕복으로 새 세션을 받고, 진행 중인 시도가 끝나면 새 세션으로 다시 연결 (ExperimentController.remoteConnectAfterAttempt)
+    static func action(isRunning: Bool, loggedIn: Bool, remoteConnected: Bool,
+                       authAction: RemoteAuthPlan.Action) -> Action {
+        guard isRunning, loggedIn, !remoteConnected,
+              authAction != .needAuthorize else { return .openSpotify }
+        return .reconnect
+    }
+}
