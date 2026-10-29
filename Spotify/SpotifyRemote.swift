@@ -20,7 +20,7 @@ final class SpotifyRemote: NSObject, ObservableObject {
     enum ConnectStart: Equatable {
         /// 연결을 시작함. renewing이면 세션 갱신 후 연결 (진행 중인 갱신이 있으면 그 결과를 기다림)
         case started(renewing: Bool)
-        /// 이미 연결됐거나 연결 중 → 아무것도 하지 않음
+        /// 이미 연결됐거나 연결 중, 또는 우리가 끊은 연결이 마무리되는 중(끝나면 onReadyToConnect) → 아무것도 하지 않음
         case busy
         /// [Spotify 앱 연결] 승인 결과를 기다리는 중 (요청 후 authorizeWait 초까지) → 시도·안내하지 않음
         case authorizing
@@ -40,6 +40,8 @@ final class SpotifyRemote: NSObject, ObservableObject {
     var onState: (@MainActor (RemoteSnapshot?) -> Void)?
     /// 연결됨(true) / 끊김(false). 끊긴 이유는 `lastError`
     var onConnectionChange: (@MainActor (Bool) -> Void)?
+    /// 우리가 끊던 연결이 마무리되는 동안 connect()를 .busy로 막았을 때, 마무리된 뒤 1번 (컨트롤러가 다시 연결 시도, 031 리뷰 R1)
+    var onReadyToConnect: (@MainActor () -> Void)?
     /// 연결 시도가 실패했을 때 (이유 상세, 같은 실패인지 비교할 키 — `domain=… code=…` / 세션 갱신 단계는 앞에 "세션 갱신")
     var onFailure: (@MainActor (String, String) -> Void)?
     /// Spotify 앱 승인이 끝나 새 세션을 받았을 때 (컨트롤러가 바로 연결을 시도)
@@ -75,6 +77,11 @@ final class SpotifyRemote: NSObject, ObservableObject {
     private var reportedConnected = false
     private var attempt = 0                       // 연결 시도 번호 (이전 시도의 갱신·시간 초과 처리가 섞이지 않게)
     private var timeoutTask: Task<Void, Never>?
+    /// 우리가 끊은(disconnect) SDK 연결·연결 시도의 콜백(성공·실패·끊김)을 기다리는 중이면 시작 시각 (031 리뷰 R1)
+    /// 그 사이 새 연결을 시작하면 옛 시도의 콜백이 새 시도 것으로 처리되므로, 콜백이 오거나 connectTimeout이 지날 때까지 새 연결을 막음
+    private var finishingDisconnectSince: TimeInterval?
+    /// 위 마무리 중에 connect()를 막았음 → 마무리되면 onReadyToConnect로 알림
+    private var connectAfterFinish = false
 
     /// Spotify 앱 승인 세션 (키체인에서 복원). ⚠️ 값은 로그에 넣지 않음
     private var session: SPTSession? {
@@ -228,9 +235,9 @@ final class SpotifyRemote: NSObject, ObservableObject {
         return "\(max(0, Int(seconds / 60)))분"
     }
 
-    /// 로그아웃(세대 변경) 전에 시작한 요청의 결과 → 저장·연결하지 않고 버림
+    /// 로그아웃·연결 해제(세대 변경, clearSession) 전에 시작한 요청의 결과 → 저장·연결하지 않고 버림
     private func ignoreStale() {
-        onLog?("⚡ 로그아웃 뒤 도착한 승인 결과 무시")
+        onLog?("⚡ 로그아웃·연결 해제 뒤 도착한 승인 결과 무시")
     }
 
     private func sessionInitiated(_ data: Data?) {
@@ -314,6 +321,16 @@ final class SpotifyRemote: NSObject, ObservableObject {
         // isConnecting 때문에 onAuthorized의 연결이 막힘 → 새 세션을 받은 onAuthorized에서 1번 연결
         if isActive(authorizing, within: authorizeWait) { return .authorizing }
         guard authAction != .needAuthorize, let session else { return .needAuthorize }
+        // 우리가 끊은 연결의 콜백이 아직 안 옴 → 새 연결을 시작하면 그 콜백이 새 시도 것으로 섞임 (031 리뷰 R1)
+        // 마무리되면 onReadyToConnect로 다시 시도. 콜백이 connectTimeout 넘게 안 오면 기다리지 않음
+        if let since = finishingDisconnectSince {
+            if Self.now - since < connectTimeout {
+                connectAfterFinish = true
+                return .busy
+            }
+            finishingDisconnectSince = nil
+            connectAfterFinish = false
+        }
         isConnecting = true
         userDisconnectReason = nil
         attempt += 1
@@ -337,8 +354,8 @@ final class SpotifyRemote: NSObject, ObservableObject {
         appRemote.connect()
     }
 
-    /// 연결 끊기 (추적 정지·앱 강제 종료·로그아웃 때). 백그라운드로 갈 때는 부르지 않음 — 연결 유지가 잠금 상태 이득의 핵심
-    /// 연결 시도 중에 불리면, 나중에 연결이 성공해도 didConnect에서 바로 끊음
+    /// 연결 끊기 (추적 정지·앱 강제 종료·로그아웃·연결 해제 때). 백그라운드로 갈 때는 부르지 않음 — 연결 유지가 잠금 상태 이득의 핵심
+    /// 연결 시도 중에 불리면, 나중에 연결이 성공해도 didConnect에서 바로 끊음 (그 끊김 콜백까지 새 연결은 .busy)
     func disconnect(reason: String = "정지") {
         guard isConnected || isConnecting else { return }
         if renewingFor != nil {
@@ -347,8 +364,19 @@ final class SpotifyRemote: NSObject, ObservableObject {
             return
         }
         userDisconnectReason = reason
+        // SDK 연결 요청이 나가 있거나 연결돼 있음 → 성공·실패·끊김 콜백이 올 때까지 새 연결을 막음 (031 리뷰 R1)
+        finishingDisconnectSince = Self.now
         endAttempt()
         if isConnected { appRemote.disconnect() }
+    }
+
+    /// 우리가 끊은 연결의 콜백이 옴(실패 또는 끊김) → 새 연결을 다시 받음. 그 사이 막은 connect()가 있으면 알림 (031 리뷰 R1)
+    private func finishUserDisconnect() {
+        guard finishingDisconnectSince != nil else { return }
+        finishingDisconnectSince = nil
+        guard connectAfterFinish else { return }
+        connectAfterFinish = false
+        onReadyToConnect?()
     }
 
     /// 연결 시도 상태를 끝냄 (성공·실패·시간 초과·끊기). 갱신을 기다리던 시도 표시도 지움
@@ -475,6 +503,7 @@ extension SpotifyRemote: SPTAppRemoteDelegate {
             self.endAttempt()
             if self.userDisconnectReason != nil {   // 우리가 끊는 중이었음 → 실패로 알리지 않음
                 self.userDisconnectReason = nil
+                self.finishUserDisconnect()          // 옛 시도가 끝남 → 새 연결을 받음 (031 리뷰 R1)
                 return
             }
             self.fail(text, key: key)
@@ -484,6 +513,8 @@ extension SpotifyRemote: SPTAppRemoteDelegate {
     nonisolated func appRemote(_ appRemote: SPTAppRemote, didDisconnectWithError error: Error?) {
         let text = error.map { Self.describe($0) }
         Task { @MainActor in
+            // 끊김 알림(로그)을 먼저 보낸 뒤 막아 둔 연결을 다시 받음 (031 리뷰 R1)
+            defer { self.finishUserDisconnect() }
             self.endAttempt()
             let byUser = self.userDisconnectReason
             self.userDisconnectReason = nil   // 다음 실제 끊김까지 남지 않게
