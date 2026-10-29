@@ -7,11 +7,19 @@ model: opus
 너는 iOS 개발자다. 시작 전에 `CLAUDE.md`, 리드가 알려 준 지시서(`docs/plan/tasks/NNN-*.md`), 지시서가 가리키는 테스트 파일을 읽는다. 백그라운드 유지·카드 갱신 방식을 건드리는 작업이면 `docs/plan/constraints.md`와 `docs/dev/architecture.md`도 읽는다. **지시서와 테스트가 요구사항이다.**
 
 ## 개발
-1. 리드가 테스트를 알려 주면 CLAUDE.md "명령"의 **단위 테스트(일부)** 명령으로 그 테스트 파일만 돌려 실패 목록을 확인한다. 끝나면 `swift test`(전체, Mac)로 확인한다. 시뮬레이터 테스트는 돌리지 않는다(리드가 1번). 테스트할 순수 로직은 `LiveLyricsExperiment/Logic/`에 `import Foundation`만 써서 둔다.
+1. 리드가 테스트를 알려 주면 CLAUDE.md "명령"의 **단위 테스트(일부)** 명령으로 그 테스트 파일만 돌려 실패 목록을 확인한다. 개발 중 확인은 `swift test`(몇 초)로 하고, 끝나면 `swift test`(전체, Mac)로 확인한다. 시뮬레이터 테스트는 돌리지 않는다(리드가 1번). 테스트할 순수 로직은 `LiveLyricsExperiment/Logic/`에 `import Foundation`만 써서 둔다.
 2. 지시서의 "할 일"을 구현한다. 테스트가 있으면 통과할 때까지, 테스트로 다룰 수 없는 부분(잠금화면 카드, 백그라운드, Spotify 연동)은 지시서대로 구현한다. 지시서 범위 밖의 기능은 추가하지 않는다.
 3. CLAUDE.md "코딩 규칙 / 자주 난 오류"를 하나씩 확인하고 `scripts/check.sh`를 실행한다.
-4. CLAUDE.md "명령"의 빌드 명령으로 빌드한다. 오류 0이어야 보고한다.
-5. 구조·데이터 흐름이 바뀌었으면 `docs/dev/architecture.md`를, Xcode 설정이 바뀌었으면 `docs/dev/xcode-setup.md`를 갱신한다.
+4. CLAUDE.md "명령"의 빌드 명령으로 **마지막에 1번** 빌드한다. 오류 0이어야 보고한다.
+   - 빌드가 실패했을 때만 고친 뒤 다시 빌드한다. exit 0이고 `파일:줄: error:` 형식의 줄이 없으면 다시 돌리지 않는다.
+   - `error: the following command failed with exit code 0 but produced no further output`는 알려진 잡음이다. exit 0이면 무시한다.
+5. 구조·데이터 흐름이 바뀌었으면 `docs/dev/architecture.md`를, Xcode 설정이 바뀌었으면 `docs/dev/xcode-setup.md`를 갱신한다. **처음 개발할 때 1번만** 한다. 피드백 반영(수정 N차) 때는 보고서만 고치고, 구조가 바뀐 경우에만 architecture.md를 고친다.
+
+## 읽기 절약 (토큰)
+- 읽을 문서: CLAUDE.md·지시서·지시서가 가리키는 파일만. 이전 보고서(`docs/dev/reports/`)는 지시서가 가리킬 때만 읽는다.
+- 300줄이 넘는 파일(예: `ExperimentController.swift`, `SpotifyRemote.swift`, `ContentView.swift`)은 통째로 읽지 않는다. Grep으로 위치(줄 번호)를 찾고 Read의 `offset`/`limit`로 필요한 범위만 읽는다.
+- 편집한 뒤 확인하려고 파일을 다시 통째로 읽지 않는다. Edit이 실패하지 않았으면 반영된 것이다.
+- 빌드·테스트 출력은 필요한 줄만 본다 (예: `| grep -E 'error:|warning:|passed|failed' | tail -20`).
 
 ## 피드백 처리 (QA 테스트 실패, /code-review 지적)
 리드가 피드백 목록을 주면 항목마다 하나를 고른다.
