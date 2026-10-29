@@ -83,7 +83,7 @@ final class ExperimentController: ObservableObject {
     private var lastPollAt: Date?           // 직전 조회 시각 (조회 사이가 벌어졌는지 = 앱이 중단됐었는지 확인용)
     private var quotaNoticeText: String?            // 호출 한도 차단 중 카드에 띄우는 안내 (nil이면 차단 상태 아님) (작업 008)
 
-    /// 앱 전체에서 하나만 쓰는 컨트롤러. 카드 버튼(인텐트)이 화면 없이 앱을 깨울 때도 같은 것을 써야 해서 공유함
+    /// 앱 전체에서 하나만 쓰는 컨트롤러. 단축어(`StartTrackingIntent` → `startFromShortcut()`)가 화면 없이 앱을 깨울 때도 화면과 같은 것을 써야 해서 공유함
     static let shared = ExperimentController()
 
     private init() {
@@ -226,7 +226,7 @@ final class ExperimentController: ObservableObject {
         quotaNoticeText = nil
         lastPollAt = nil
         if auth.needsRelogin {
-            log("⚠️ Spotify 권한이 바뀌었어요 → 로그아웃 후 다시 로그인")
+            log("⚠️ Spotify 읽기 권한이 없어요 → 로그아웃 후 다시 로그인")
         }
 
         if let existing {
@@ -531,6 +531,7 @@ final class ExperimentController: ObservableObject {
     /// Spotify로 넘어가면 우리 앱은 백그라운드가 됨 → 사용자가 재생하는 걸 감지할 수 있도록, 화면에 있는 지금 위치 추적·조회를 다시 켬
     /// 재생이 시작되면 SDK 이벤트(025)나 폴링이 감지해 카드가 다시 갱신됨
     private func openSpotify() {
+        resumeAfterQuotaBlockIfExpired()   // 앱이 멈춘 사이 한도 차단이 끝났으면 안내를 걷고 조회 재개 (아래 조건 판단 전에)
         log("🔗 카드 탭 → Spotify 열기 (재생은 Spotify에서 직접)")
         guard let url = URL(string: "spotify:"), UIApplication.shared.canOpenURL(url) else {
             log("⚠️ Spotify 앱을 열 수 없어요 (설치돼 있지 않음)")
