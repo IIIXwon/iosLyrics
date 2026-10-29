@@ -196,4 +196,76 @@ struct RemoteSyncTests {
         // given // when // then
         #expect(RemoteAuthPlan.renewMargin == 60)
     }
+
+    private func 카드탭(isRunning: Bool = true, loggedIn: Bool = true,
+                      remoteConnected: Bool = false, remoteConnecting: Bool = false,
+                      authAction: RemoteAuthPlan.Action = .connect) -> CardTapPlan.Action {
+        CardTapPlan.action(isRunning: isRunning, loggedIn: loggedIn,
+                           remoteConnected: remoteConnected,
+                           remoteConnecting: remoteConnecting,
+                           authAction: authAction)
+    }
+
+    // 029-1
+    @Test func 카드탭판단_끊김이고세션이유효하면_재연결한다() {
+        // given // when
+        let result = 카드탭()
+
+        // then
+        #expect(result == .reconnect)
+    }
+
+    // 029-2
+    @Test func 카드탭판단_세션곧만료지만갱신가능하면_재연결한다() {
+        // given // when
+        let result = 카드탭(authAction: .renew)
+
+        // then
+        #expect(result == .reconnect)
+    }
+
+    // 029-3
+    @Test func 카드탭판단_승인세션이없으면_스포티파이만연다() {
+        // given // when
+        let result = 카드탭(authAction: .needAuthorize)
+
+        // then
+        #expect(result == .openSpotify)
+    }
+
+    // 029-4
+    @Test func 카드탭판단_SDK가연결돼있으면_스포티파이만연다() {
+        // given // when
+        let result = 카드탭(remoteConnected: true)
+
+        // then
+        #expect(result == .openSpotify)
+    }
+
+    // 029-5
+    @Test func 카드탭판단_SDK연결시도중이면_스포티파이만연다() {
+        // given // when
+        let result = 카드탭(remoteConnecting: true)
+
+        // then
+        #expect(result == .openSpotify)
+    }
+
+    // 029-6
+    @Test func 카드탭판단_추적중이아니면_스포티파이만연다() {
+        // given // when
+        let result = 카드탭(isRunning: false)
+
+        // then
+        #expect(result == .openSpotify)
+    }
+
+    // 029-7
+    @Test func 카드탭판단_로그인안돼있으면_스포티파이만연다() {
+        // given // when
+        let result = 카드탭(loggedIn: false)
+
+        // then
+        #expect(result == .openSpotify)
+    }
 }
