@@ -77,33 +77,13 @@ final class NowPlayingService: ObservableObject {
     private let api: SpotifyAPI
     private var task: Task<Void, Never>?
 
-    /// 마지막으로 재생이 확인된 기기. 카드 ▶︎ 버튼이 같은 기기로 재생을 요청할 때 쓰고, 앱을 껐다 켜도 남겨 둠
     /// 일시정지 중 "재생 중인 기기 없음(204)"이 와도 마지막 곡을 유지하는 기간(초). 컨트롤러가 위치 추적을 끄는 시점에 맞춰 정함
     var pausedHoldLimit: TimeInterval = 190
     private var pausedSince: TimeInterval?   // 일시정지가 시작된 시각 (기기 가동 시간 기준)
     private var holdLogged = false           // "마지막 곡을 일시정지로 유지" 로그를 한 번만 남기기 위한 표시
 
-    private(set) var lastDevice: SpotifyDevice?
-    private static let lastDeviceKey = "spotify.lastDevice"
-
     init(api: SpotifyAPI) {
         self.api = api
-        if let data = UserDefaults.standard.data(forKey: Self.lastDeviceKey) {
-            lastDevice = try? JSONDecoder().decode(SpotifyDevice.self, from: data)
-        }
-    }
-
-    /// 재생 중인 기기를 기억 (기기가 바뀔 때만 저장·로그)
-    private func rememberDevice(_ device: SpotifyDevice) {
-        guard device.id != nil else { return }
-        if lastDevice?.id != device.id {
-            onLog?("🔌 재생 기기 기억: \(device.name) (\(device.type))")
-        }
-        guard lastDevice != device else { return }
-        lastDevice = device
-        if let data = try? JSONEncoder().encode(device) {
-            UserDefaults.standard.set(data, forKey: Self.lastDeviceKey)
-        }
     }
 
     var isRunning: Bool { task != nil }
@@ -180,15 +160,14 @@ final class NowPlayingService: ObservableObject {
         let result = CurrentlyPlaying(
             type: "track", isPlaying: snap.isPlaying, progress: snap.position,
             track: CurrentlyPlaying.Track(id: snap.trackID, title: snap.title, artist: snap.artist,
-                                          album: snap.album, duration: snap.duration),
-            device: nil
+                                          album: snap.album, duration: snap.duration)
         )
         lastRemoteAt = uptime
         staleLogged = false
         logPrefix = "⚡"
         handle(result, stamp: uptime)
         logPrefix = ""
-        // 곡 변경 직후 Web API 확인은 하지 않음 (⑤ 리드 판정: 대부분 앞 곡을 줘서 버려짐). 기기 기억은 정규 폴링이 함
+        // 곡 변경 직후 Web API 확인은 하지 않음 (⑤ 리드 판정: 대부분 앞 곡을 줘서 버려짐)
     }
 
     /// Web API 조회 결과 반영. SDK 연결 중이고 최근 SDK 이벤트와 곡·재생 상태가 다르면 Web API가 늦은 것으로 보고 무시
@@ -196,7 +175,6 @@ final class NowPlayingService: ObservableObject {
         if remoteConnected, let at = lastRemoteAt, uptime - at < remoteTrust, let current {
             let sameTrack = result?.type == "track" && result?.track?.id == current.trackID
             if !sameTrack || result?.isPlaying != current.isPlaying {
-                if let result, result.isPlaying, let device = result.device { rememberDevice(device) }
                 if !staleLogged {
                     staleLogged = true
                     onLog?("ℹ️ Web API가 아직 SDK와 다름 — SDK 값 유지")
@@ -224,7 +202,7 @@ final class NowPlayingService: ObservableObject {
             } catch is CancellationError {
                 break
             } catch SpotifyAPIError.blocked(let until, let body) {
-                // 60초를 넘게 막힘 → 그 시각까지 조회를 완전히 멈춤. 재개는 앱 열기·▶︎·단축어 때 start()로
+                // 60초를 넘게 막힘 → 그 시각까지 조회를 완전히 멈춤. 재개는 앱 열기·단축어 때 start()로
                 status = "한도 차단"
                 onBlocked?(until, body)
                 task = nil
@@ -266,9 +244,6 @@ final class NowPlayingService: ObservableObject {
     }
 
     private func handle(_ result: CurrentlyPlaying?, stamp: TimeInterval) {
-        // 재생 중일 때 알려 주는 기기를 기억 (404 NO_ACTIVE_DEVICE 대비)
-        if let result, result.isPlaying, let device = result.device { rememberDevice(device) }
-
         // 일시정지 중이던 곡이 있는데 204(재생 중인 기기 없음)를 받으면, 곡을 지우지 않고 마지막 곡을 일시정지로 유지 (작업 007)
         // 일시정지 후 Spotify가 잠깐 뒤에 기기 목록에서 빠지기 때문. 유지 기간은 pausedHoldLimit(= 위치 추적을 끄는 시점)까지
         if result == nil, let held = current, !held.isPlaying, let since = pausedSince, uptime - since < pausedHoldLimit {

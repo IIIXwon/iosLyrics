@@ -79,14 +79,11 @@ final class ExperimentController: ObservableObject {
     private var idleTask: Task<Void, Never>?
 
     // 카드의 안내 문구를 폴링이 덮어쓰지 않게 붙잡아 두는 상태 (작업 001)
-    private var idleNoticeShown = false     // "▶︎를 누르면 가사가 다시 나와요" — 재생이 다시 시작될 때까지 유지
-    private var noticeUntil: Date?          // "Spotify 앱을 한 번 열어 주세요" 같은 짧은 안내 — 몇 초 동안 유지
+    private var idleNoticeShown = false     // IdleNotice("⏸ 일시정지 / 카드를 눌러 Spotify에서 재생해 주세요") — 재생이 다시 시작될 때까지 유지
     private var lastPollAt: Date?           // 직전 조회 시각 (조회 사이가 벌어졌는지 = 앱이 중단됐었는지 확인용)
-    private var afterPlayTask: Task<Void, Never>?   // ▶︎ 이후 10분 동안 1분마다 찍는 확인용 로그 (작업 007)
-    private var playRequestInProgress = false       // 재생 요청(재시도 포함)이 진행 중인지 — 겹쳐 시작하지 않으려고 (작업 007 수정 1차)
     private var quotaNoticeText: String?            // 호출 한도 차단 중 카드에 띄우는 안내 (nil이면 차단 상태 아님) (작업 008)
 
-    /// 앱 전체에서 하나만 쓰는 컨트롤러. 카드 버튼(인텐트)이 화면 없이 앱을 깨울 때도 같은 것을 써야 해서 공유함
+    /// 앱 전체에서 하나만 쓰는 컨트롤러. 단축어(`StartTrackingIntent` → `startFromShortcut()`)가 화면 없이 앱을 깨울 때도 화면과 같은 것을 써야 해서 공유함
     static let shared = ExperimentController()
 
     private init() {
@@ -217,7 +214,7 @@ final class ExperimentController: ObservableObject {
             }
             guard location.start() else { return false }
         } else if !location.start() {
-            // 이어받는 경우에는 위치 추적이 안 켜져도 카드는 이어받음 (카드 ▶︎ 버튼으로 다시 켤 수 있음)
+            // 이어받는 경우에는 위치 추적이 안 켜져도 카드는 이어받음 (카드 탭(Spotify 열기)이나 앱 화면으로 다시 켤 수 있음)
             log("⚠️ 위치 추적을 켜지 못했어요 — 권한: \(location.authorizationText)")
         }
 
@@ -226,11 +223,10 @@ final class ExperimentController: ObservableObject {
         lastSent = nil
         lastSentKey = nil
         idleNoticeShown = false
-        noticeUntil = nil
         quotaNoticeText = nil
         lastPollAt = nil
         if auth.needsRelogin {
-            log("⚠️ 카드 ▶︎ 버튼(재생 제어)용 새 권한이 필요해요 → 로그아웃 후 Spotify에 다시 로그인")
+            log("⚠️ Spotify 읽기 권한이 없어요 → 로그아웃 후 다시 로그인")
         }
 
         if let existing {
@@ -260,18 +256,13 @@ final class ExperimentController: ObservableObject {
     }
 
     private func stopTracking() {
-        afterPlayTask?.cancel()
-        afterPlayTask = nil
         quotaNoticeText = nil
         nowPlaying.stop()
-        spotifyWaitTask?.cancel()
-        spotifyWaitTask = nil
         resetLyrics()
         cancelPrefetches()
         idleTask?.cancel()
         idleTask = nil
         idleNoticeShown = false
-        noticeUntil = nil
         activityStateTask?.cancel()
         activityStateTask = nil
         let ending = activity
@@ -391,7 +382,7 @@ final class ExperimentController: ObservableObject {
         updateLocationPolicy(playing: np?.isPlaying == true)
 
         // 안내 문구가 떠 있는 동안에는 재생이 다시 시작되기 전까지 폴링이 카드를 덮어쓰지 않음
-        if np?.isPlaying != true, idleNoticeShown || (noticeUntil.map { Date() < $0 } ?? false) {
+        if np?.isPlaying != true, idleNoticeShown {
             skippedUpdates += 1
             return
         }
@@ -423,7 +414,6 @@ final class ExperimentController: ObservableObject {
             idleTask?.cancel()
             idleTask = nil
             idleNoticeShown = false   // 재생이 다시 시작됐으니 안내 문구를 걷고 일반 카드로 복귀
-            noticeUntil = nil
             if !location.isRunning {
                 log("📍 재생 재개 → 위치 추적 다시 켬")
                 _ = location.start()
@@ -435,10 +425,10 @@ final class ExperimentController: ObservableObject {
                 try? await Task.sleep(nanoseconds: UInt64(idleGrace * 1_000_000_000))
                 guard !Task.isCancelled else { return }
                 idleTask = nil
-                // 끈 뒤에는 카드를 갱신할 수 없으므로, 끄기 직전에 "▶︎를 누르면 가사가 다시 나와요"로 바꿔 둠
+                // 끈 뒤에는 카드를 갱신할 수 없으므로, 끄기 직전에 "카드를 눌러 Spotify에서 재생해 주세요"로 바꿔 둠
                 await showIdleNotice()
                 location.stop()
-                log("🔋 \(minutes)분 동안 재생이 없어 위치 추적을 껐어요 (카드의 ▶︎ 버튼이나 앱 화면으로 다시 켤 수 있어요)")
+                log("🔋 \(minutes)분 동안 재생이 없어 위치 추적을 껐어요 (카드 탭(Spotify 열기)이나 앱 화면으로 다시 켤 수 있어요)")
             }
         }
     }
@@ -475,7 +465,7 @@ final class ExperimentController: ObservableObject {
         }
     }
 
-    /// 한도 차단 재개 시각이 지났으면(앱 열기·▶︎·단축어 때) 안내를 걷고 조회·위치 추적을 다시 시작
+    /// 한도 차단 재개 시각이 지났으면(앱 열기·단축어 때) 안내를 걷고 조회·위치 추적을 다시 시작
     private func resumeAfterQuotaBlockIfExpired() {
         guard quotaNoticeText != nil, SpotifyBlock.until == nil else { return }
         SpotifyBlock.clear()
@@ -488,179 +478,19 @@ final class ExperimentController: ObservableObject {
         // 안내 카드를 바로 일반 카드로 되돌리려면 곧 오는 조회 결과를 기다리면 됨 (조회는 start()가 바로 시작)
     }
 
-    /// 위치 추적을 끄기 직전의 카드: ⏸ 일시정지 · 다시 재생했다면 ▶︎를 눌러 주세요
-    /// (Spotify에서 직접 다시 재생한 경우에도 카드는 따라오지 않아서, 그때도 ▶︎를 누르면 된다는 뜻)
+    /// 위치 추적을 끄기 직전의 카드: IdleNotice (⏸ 일시정지 · 카드를 눌러 Spotify에서 재생해 주세요, 작업 026)
+    /// 끈 뒤에는 앱이 멈춰 Spotify에서 다시 재생해도 카드가 따라오지 않으므로, 카드 탭(Spotify 열기)으로 앱을 깨우라는 뜻
     private func showIdleNotice() async {
         guard activity != nil else { return }
         var state = makeState(nowPlaying.current)
         state.previous = ""
-        state.current = "⏸ 일시정지"
-        state.next = "다시 재생했다면 ▶︎를 눌러 주세요"
+        state.current = IdleNotice.current
+        state.next = IdleNotice.next
         idleNoticeShown = true
         await sendCard(state, key: nowPlaying.current?.key, reason: "위치 추적 끄기 직전 안내")?.value
     }
 
-    // MARK: - 카드의 ▶︎ "가사 다시 켜기" 버튼 (작업 001)
-
-    /// 카드 버튼 → iOS가 앱을 깨우고 호출. 재생 요청 · 위치 추적 재시작 · 즉시 조회 · 폴링 재개를 한 번에 함
-    /// 인텐트 실행 시간이 짧아서, 재생 요청(실패 시 재시도 포함)은 따로 진행시키고 기다리지 않음 →
-    /// 위치 추적 재시작·폴링 재개·가사 재연결이 재생 요청 재시도에 막히지 않음
-    func resumeFromCard() async {
-        log("▶︎ 카드 버튼 눌림 — 앱 상태: \(appStateName()) · 위치 권한: \(location.authorizationText) · 위치 추적 \(location.isRunning ? "ON" : "OFF")")
-        resumeAfterQuotaBlockIfExpired()
-        guard isRunning, activity != nil else {
-            log("⚠️ 추적이 꺼져 있어요 (이어받을 카드가 없거나 로그인이 안 된 상태) → 앱 화면을 열어 [시작]을 눌러 주세요")
-            return
-        }
-        // 한도 차단 중이면 API를 호출하지 않고 카드 안내만 다시 표시
-        if let until = SpotifyBlock.until {
-            log("⛔️ 한도 차단 중 — \(SpotifyBlock.untilText(until)) 이후 재개")
-            handleQuotaBlock(until: until, body: nil)
-            return
-        }
-        idleTask?.cancel()
-        idleTask = nil
-
-        // 1) 재생 요청(따로 진행)과 위치 추적 시작
-        //    재생 요청(재시도 포함)이 이미 진행 중이면 새로 시작하지 않음 (▶︎를 연달아 누르거나 인텐트가 겹칠 때 요청·카드 문구가 뒤섞이지 않게).
-        //    위치 추적 재시작·가사 재연결은 그대로 진행
-        if playRequestInProgress {
-            log("⏳ 재생 요청 진행 중 — 이번 ▶︎는 가사만 다시 연결")
-        } else {
-            playRequestInProgress = true   // 같은 메인 액터에서 바로 표시해야 겹쳐 호출돼도 한 번만 시작됨
-            Task {
-                await requestPlay()
-                playRequestInProgress = false
-            }
-        }
-        restartLocationForResume()
-
-        // 2) 폴링 재개 + 1초 뒤 즉시 1회 조회 (Spotify가 재생 상태를 반영할 시간을 잠깐 줌)
-        nowPlaying.start()
-        try? await Task.sleep(nanoseconds: 1_000_000_000)
-        await nowPlaying.refreshNow()
-        log("▶︎ 카드 버튼 처리 끝 — 재생: \(nowPlaying.current?.isPlaying == true ? "예" : "아니오") · 위치 추적 \(location.isRunning ? "ON" : "OFF")")
-
-        startAfterPlayLog()
-    }
-
-    /// ▶︎ 이후 10분 동안 1분마다 한 줄 (잠근 채 장시간 갱신이 이어지는지 사용자가 판단하는 용도). 10분 뒤 중단
-    /// 앱이 중단됐다가 깨어나 정해진 시각보다 늦게 찍히면 그 사실을 같이 적음
-    private func startAfterPlayLog() {
-        afterPlayTask?.cancel()
-        let start = Date()
-        afterPlayTask = Task {
-            for minute in 1...10 {
-                let target = start.addingTimeInterval(TimeInterval(minute * 60))
-                let wait = target.timeIntervalSinceNow
-                if wait > 0 { try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) }
-                guard !Task.isCancelled else { return }
-                let late = Date().timeIntervalSince(target)
-                var line = "🕐 ▶︎ 후 \(minute)분 · \(appStateName()) · 위치 \(location.isRunning ? "ON" : "OFF") · 조회 #\(nowPlaying.pollCount)"
-                if late > 10 { line += " · ⚠️ \(Int(late))초 늦게 (그 사이 앱이 중단됐을 수 있어요)" }
-                log(line)
-            }
-        }
-    }
-
-    private enum PlayResult {
-        case done          // 재생 요청 성공 (또는 이미 재생 중이라 가사만 다시 연결하면 되는 경우)
-        case noDevices     // 404이고 연결된 기기 목록이 비어 있음 → 다시 시도해 볼 만함
-        case openSpotify   // 404인데 옮길 기기가 없거나 이전이 실패 → Spotify 앱을 열어야 함
-        case other         // 그 밖의 실패 (로그만 남김)
-    }
-
-    /// Spotify 재생 요청. 이미 재생 중이어도 문제없이 가사만 다시 연결되도록 실패해도 멈추지 않음
-    /// 404이고 기기 목록이 비어 있으면(Spotify 앱이 연결을 잠깐 끊었을 수 있음) 3초 간격으로 최대 2회 처음부터 다시 시도하고,
-    /// 모두 실패하면 카드에 "Spotify 앱을 한 번 열어 주세요"를 띄움
-    private func requestPlay() async {
-        var result = await playOnce()
-        var attempt = 0
-        while result == .noDevices, attempt < 2 {
-            attempt += 1
-            showTemporaryNotice("Spotify에 연결하는 중…")
-            log("🔁 재생 요청 재시도 \(attempt)/2 (3초 뒤)")
-            try? await Task.sleep(nanoseconds: 3_000_000_000)
-            result = await playOnce()
-            log(result == .done ? "🔁 재생 요청 재시도 \(attempt)/2 성공" : "🔁 재생 요청 재시도 \(attempt)/2 실패")
-        }
-        if result == .noDevices || result == .openSpotify {
-            showTemporaryNotice("Spotify 앱을 한 번 열어 주세요")
-        }
-    }
-
-    /// 재생 요청 1번: 마지막으로 재생이 확인된 기기(`device_id`)로 요청하고, 404면 기기 목록을 로그에 남기고 재생을 옮겨 재시도
-    /// device를 주면 그 기기로 요청 (카드 탭 후 나타난 기기, 작업 010)
-    private func playOnce(device: SpotifyDevice? = nil) async -> PlayResult {
-        let remembered = device ?? nowPlaying.lastDevice
-        let target = remembered.map { "기기: \($0.name)" } ?? "기기 지정 없음"
-        do {
-            let status = try await api.play(deviceID: remembered?.id)
-            log("▶︎ Spotify 재생 요청 성공 (HTTP \(status), \(target))")
-            return .done
-        } catch SpotifyAPIError.blocked(let until, let body) {
-            handleQuotaBlock(until: until, body: body)
-            return .other
-        } catch SpotifyAPIError.http(let code, let body) {
-            log("⚠️ Spotify 재생 요청 실패 (HTTP \(code), \(target)): \(body)")
-            if code == 404 { return await recoverNoActiveDevice(remembered: remembered) }
-            if code == 403, body.localizedCaseInsensitiveContains("scope") {
-                log("⚠️ 재생 제어 권한이 없어요 → 로그아웃 후 Spotify에 다시 로그인")
-                showTemporaryNotice("Spotify에 다시 로그인해 주세요")
-                return .other
-            }
-            if code == 403 {
-                log("ℹ️ 이미 재생 중이거나 지금은 재생 명령을 받을 수 없는 상태 — 가사만 다시 연결해요")
-                return .done
-            }
-            return .other
-        } catch {
-            log("⚠️ Spotify 재생 요청 오류: \(error.localizedDescription)")
-            return .other
-        }
-    }
-
-    /// 404 NO_ACTIVE_DEVICE 대응: 기기 목록을 로그에 남기고, 기억한 기기 또는 스마트폰 기기로 재생을 옮겨 재시도
-    private func recoverNoActiveDevice(remembered: SpotifyDevice?) async -> PlayResult {
-        let devices: [SpotifyDevice]
-        do {
-            devices = try await api.devices()
-        } catch SpotifyAPIError.blocked(let until, let body) {
-            handleQuotaBlock(until: until, body: body)
-            return .other
-        } catch {
-            log("⚠️ 기기 목록 조회 오류: \(error.localizedDescription)")
-            return .openSpotify
-        }
-
-        if devices.isEmpty {
-            log("❌ 연결된 Spotify 기기가 없어요 — Spotify 앱이 연결을 끊었음 (Spotify 앱을 직접 열어야 다시 연결돼요)")
-            return .noDevices
-        }
-        for device in devices {
-            log("🔌 기기: \(device.name) · \(device.type) · 활성 \(device.isActive ? "예" : "아니오")")
-        }
-
-        // 기억한 기기가 목록에 있으면 그것, 없으면 스마트폰 기기. 컴퓨터·스피커 등으로 멋대로 옮기지는 않음
-        let target = devices.first { $0.id != nil && $0.id == remembered?.id }
-            ?? devices.first { $0.type == "Smartphone" && $0.id != nil }
-        guard let target, let targetID = target.id else {
-            log("❌ 재생을 옮길 기기를 찾지 못했어요 (기억한 기기: \(remembered?.name ?? "없음"))")
-            return .openSpotify
-        }
-
-        do {
-            let status = try await api.transferPlayback(to: targetID, play: true)
-            log("▶︎ 재생 기기 이전 성공 (HTTP \(status)) → \(target.name)")
-            return .done
-        } catch SpotifyAPIError.blocked(let until, let body) {
-            handleQuotaBlock(until: until, body: body)
-            return .other
-        } catch {
-            log("❌ 재생 기기 이전 실패 → \(target.name): \(error.localizedDescription)")
-            return .openSpotify
-        }
-    }
+    // MARK: - 카드 탭 → Spotify 열기 (작업 009, 026: 재생 제어 없음)
 
     /// 위치 추적 재시작. 백그라운드에서 새로 시작이 막힐 수 있어서(권한 "앱 사용 중") 5초 뒤 수신 여부까지 기록
     private func restartLocationForResume() {
@@ -682,21 +512,6 @@ final class ExperimentController: ObservableObject {
         }
     }
 
-    /// 몇 초 동안 카드에 짧은 안내를 띄움 (그 사이 폴링이 덮어쓰지 않음)
-    private func showTemporaryNotice(_ text: String) {
-        guard activity != nil else { return }
-        var state = makeState(nowPlaying.current)
-        state.previous = ""
-        state.current = text
-        state.next = ""
-        noticeUntil = Date().addingTimeInterval(8)
-        sendCard(state, key: nowPlaying.current?.key, reason: "안내: \(text)")
-    }
-
-    // MARK: - 카드 탭 → Spotify 열기 → 자동 재생 (작업 009·010)
-
-    private var spotifyWaitTask: Task<Void, Never>?   // Spotify를 연 뒤 기기가 나타나길 기다리는 중 (하나만)
-
     /// 앱 주소(livelyrics://…)로 앱이 열렸을 때. open-spotify = 잠금화면 카드 탭, callback = Spotify 앱 승인 후 돌아옴(작업 025 검토 2차)
     /// Web API 로그인(PKCE)은 ASWebAuthenticationSession이 callback을 직접 받으므로 여기로 오지 않음
     /// ⚠️ callback 주소에는 승인 코드가 들어 있으므로 주소를 로그에 남기지 않음
@@ -712,91 +527,23 @@ final class ExperimentController: ObservableObject {
         }
     }
 
+    /// 카드 탭 = Spotify 앱 열기만 (작업 026: 재생 요청·기기 조회 없음, 재생은 사용자가 Spotify에서 직접)
+    /// Spotify로 넘어가면 우리 앱은 백그라운드가 됨 → 사용자가 재생하는 걸 감지할 수 있도록, 화면에 있는 지금 위치 추적·조회를 다시 켬
+    /// 재생이 시작되면 SDK 이벤트(025)나 폴링이 감지해 카드가 다시 갱신됨
     private func openSpotify() {
-        log("🔗 카드 탭 → Spotify 열기")
+        resumeAfterQuotaBlockIfExpired()   // 앱이 멈춘 사이 한도 차단이 끝났으면 안내를 걷고 조회 재개 (아래 조건 판단 전에)
+        log("🔗 카드 탭 → Spotify 열기 (재생은 Spotify에서 직접)")
         guard let url = URL(string: "spotify:"), UIApplication.shared.canOpenURL(url) else {
             log("⚠️ Spotify 앱을 열 수 없어요 (설치돼 있지 않음)")
             return
         }
-        // Spotify로 넘어가면 우리 앱은 백그라운드가 됨 → 기다리는 동안 살아 있도록 화면에 있는 지금 위치 추적부터 켬
-        let shouldWait = isRunning && activity != nil && SpotifyBlock.until == nil   // 한도 차단 중이면 대기 안 함 (작업 008)
-        if shouldWait, spotifyWaitTask == nil { restartLocationForResume() }
+        if isRunning, activity != nil, SpotifyBlock.until == nil {   // 한도 차단 중이면 조회를 다시 켜지 않음 (작업 008)
+            idleTask?.cancel()
+            idleTask = nil
+            restartLocationForResume()
+            if !nowPlaying.isRunning { nowPlaying.start() }
+        }
         UIApplication.shared.open(url)
-        if shouldWait { startSpotifyWait() }
-    }
-
-    /// Spotify를 연 직후: 2초마다 기기 목록을 확인(최대 20초)하고, 기기가 나타나면 그 기기로 재생 요청 1번
-    /// 오래 멈춘 뒤에는 Spotify 앱이 연결을 끊어서(404) 사용자가 Spotify에서 재생을 직접 눌러야 했던 것을 대신함
-    private func startSpotifyWait() {
-        guard spotifyWaitTask == nil else {
-            log("🔗 이미 연결 대기 중 — 이어서 기다려요")
-            return
-        }
-        idleTask?.cancel()
-        idleTask = nil
-        log("🔗 Spotify 열림 → 연결 대기 (최대 20초)")
-        spotifyWaitTask = Task {
-            await waitForSpotifyDeviceAndPlay()
-            spotifyWaitTask = nil
-        }
-    }
-
-    private func waitForSpotifyDeviceAndPlay() async {
-        let interval: UInt64 = 2
-        for step in 1...10 {
-            try? await Task.sleep(nanoseconds: interval * 1_000_000_000)
-            guard !Task.isCancelled, isRunning else { return }
-            let elapsed = Int(interval) * step
-
-            // 폴링이 이미 재생 중을 확인했으면 재생 요청을 보내지 않음
-            if nowPlaying.current?.isPlaying == true {
-                log("🔗 이미 재생 중 → 대기 종료")
-                return
-            }
-
-            let devices: [SpotifyDevice]
-            do {
-                devices = try await api.devices()
-            } catch SpotifyAPIError.blocked(let until, let body) {
-                handleQuotaBlock(until: until, body: body)
-                return
-            } catch {
-                log("⚠️ 기기 목록 조회 오류: \(error.localizedDescription)")
-                continue
-            }
-
-            // 기억한 기기, 없으면 스마트폰 기기 (컴퓨터·스피커 등으로는 옮기지 않음 — 기존 404 대응과 같은 기준)
-            let remembered = nowPlaying.lastDevice
-            guard let target = devices.first(where: { $0.id != nil && $0.id == remembered?.id })
-                    ?? devices.first(where: { $0.type == "Smartphone" && $0.id != nil }) else { continue }
-
-            // 활성 기기면 이미 재생 중일 수 있어서 한 번 조회해서 확인 (활성이어도 일시정지일 수 있음)
-            if target.isActive {
-                await nowPlaying.refreshNow()
-                if nowPlaying.current?.isPlaying == true {
-                    log("🔗 이미 재생 중 → 대기 종료")
-                    return
-                }
-            }
-
-            // ▶︎ 버튼의 재생 요청이 진행 중이면 겹쳐 보내지 않음
-            guard !playRequestInProgress else {
-                log("🔗 기기 나타남 (\(elapsed)초) — ▶︎ 재생 요청이 진행 중이라 대기 종료")
-                return
-            }
-            log("🔗 기기 나타남 (\(elapsed)초) → 재생 요청")
-            playRequestInProgress = true
-            _ = await playOnce(device: target)
-            playRequestInProgress = false
-
-            // 재생 요청 뒤 즉시 1회 조회 → 카드·가사 갱신 (▶︎ 흐름과 같은 순서)
-            if !location.isRunning { restartLocationForResume() }
-            nowPlaying.start()
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
-            await nowPlaying.refreshNow()
-            return
-        }
-        log("🔗 20초 동안 기기 없음 → 대기 종료")
     }
 
     // MARK: - 가사

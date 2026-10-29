@@ -4,9 +4,9 @@
 // 끊기면 지금처럼 Web API 3초 폴링으로 돌아가요 (NowPlayingService).
 // - 연결 토큰은 Spotify 앱 승인 세션(SPTSessionManager)의 토큰 (검토 2차: Web API PKCE 토큰은 Spotify 앱이 거부함)
 //   승인은 사용자가 [Spotify 앱 연결]을 눌렀을 때만. 세션은 키체인(AfterFirstUnlock)에 저장하고 앱 시작 때 복원
-// - Web API 로그인·토큰(폴링·카드 ▶︎용)은 그대로 SpotifyAuth가 맡음
+// - Web API 로그인·토큰(폴링용)은 그대로 SpotifyAuth가 맡음
 // - ⚠️ authorizeAndPlayURI·재생 URI 설정은 쓰지 않음 (Spotify를 강제로 열고 재생시키므로)
-// - ⚠️ 재생 제어(재생/일시정지/스킵)는 하지 않음 — 감지 전용. 카드 ▶︎은 지금처럼 Web API
+// - ⚠️ 재생 제어(재생/일시정지/스킵)는 하지 않음 — 감지 전용. 앱 어디서도 재생 제어를 하지 않음 (작업 026)
 // - ⚠️ SDK 타입(SPT…)은 이 파일 밖으로 내보내지 않음 — 밖에는 Bool·TimeInterval·RemoteSnapshot 같은 값만
 // - ⚠️ 토큰·세션 값은 어떤 로그에도 넣지 않음 (남은 시간·있음/없음만)
 import Combine
