@@ -171,6 +171,16 @@ final class ExperimentController: ObservableObject {
         readiness.refresh()
     }
 
+    /// [Spotify 앱 연결 해제] (작업 031): SDK 승인 세션만 지움. Web API 로그인·추적·Live Activity는 그대로
+    /// 끊김 로그는 remoteConnectionChanged 규칙(`⚡ SDK 연결 끊음 (연결 해제)`), 폴링은 remoteConnected = false로 3초 간격 복귀
+    /// 해제 뒤 자동 재승인·재연결 없음: authAction == .needAuthorize, 카드 탭은 hasSession == false라 Spotify만 엶 (030 규칙)
+    func disconnectRemote() {
+        log("⚡ Spotify 앱 연결 해제 (Spotify 로그인은 유지 — 3초 폴링으로 계속)")
+        remote.clearSession(reason: "연결 해제")
+        remoteConnectAfterAttempt = false
+        remoteAuthWarned = false
+    }
+
     /// 백그라운드 없이 한 번만 조회 (연결 확인용)
     func checkOnce() {
         nowPlaying.start()

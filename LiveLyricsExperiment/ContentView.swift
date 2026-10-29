@@ -19,6 +19,8 @@ struct ContentView: View {
                     controller.logout()
                 } onAuthorizeRemote: {
                     controller.authorizeRemote()
+                } onDisconnectRemote: {
+                    controller.disconnectRemote()
                 }
 
                 Section {
@@ -146,6 +148,10 @@ private struct SpotifySection: View {
     let onLogin: () -> Void
     let onLogout: () -> Void
     let onAuthorizeRemote: () -> Void
+    let onDisconnectRemote: () -> Void
+
+    /// [Spotify 앱 연결 해제] 확인 창 표시 여부 (작업 031)
+    @State private var confirmingDisconnect = false
 
     var body: some View {
         Section("Spotify") {
@@ -156,6 +162,20 @@ private struct SpotifySection: View {
             case .login(let enabled):
                 Button("Spotify로 로그인", action: onLogin)
                     .disabled(!enabled)
+            }
+            // SDK 승인 세션이 있을 때만 보임 — Spotify 로그인은 유지 (작업 031)
+            if RemoteAuthPlan.showsDisconnectButton(hasSession: remote.hasSession) {
+                Button("Spotify 앱 연결 해제", role: .destructive) {
+                    confirmingDisconnect = true
+                }
+                .confirmationDialog("Spotify 앱 연결을 해제할까요?",
+                                    isPresented: $confirmingDisconnect,
+                                    titleVisibility: .visible) {
+                    Button("연결 해제", role: .destructive, action: onDisconnectRemote)
+                    Button("취소", role: .cancel) {}
+                } message: {
+                    Text("가사는 계속 표시돼요. 곡 변경 반영이 조금 느려질 수 있어요. 다시 쓰려면 [Spotify 앱 연결]을 누르세요.")
+                }
             }
             // Spotify 앱 승인(SDK 연결용)이 필요할 때만 보임 (작업 025 검토 2차)
             if RemoteAuthPlan.showsAuthorizeButton(loggedIn: auth.isLoggedIn, action: remote.authAction) {

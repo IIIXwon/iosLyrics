@@ -56,8 +56,9 @@ final class SpotifyRemote: NSObject, ObservableObject {
     private(set) var isConnecting = false
     var isConnected: Bool { appRemote.isConnected }
 
-    /// 승인 세션이 있는지 (값은 노출하지 않음)
-    var hasSession: Bool { session != nil }
+    /// 승인 세션이 있는지 (값은 노출하지 않음). 화면의 [Spotify 앱 연결 해제] 버튼 판단용으로 관찰 가능 (작업 031)
+    /// `session`의 didSet에서 맞춤 (init 복원·store·clearSession)
+    @Published private(set) var hasSession = false
     /// 승인 세션 토큰의 남은 유효 시간(초). 세션 없으면 nil
     var sessionRemaining: TimeInterval? { session?.expirationDate.timeIntervalSinceNow }
 
@@ -76,7 +77,12 @@ final class SpotifyRemote: NSObject, ObservableObject {
     private var timeoutTask: Task<Void, Never>?
 
     /// Spotify 앱 승인 세션 (키체인에서 복원). ⚠️ 값은 로그에 넣지 않음
-    private var session: SPTSession?
+    private var session: SPTSession? {
+        didSet {
+            let has = session != nil
+            if has != hasSession { hasSession = has }   // 바뀔 때만 발행 (작업 031)
+        }
+    }
     private static let sessionKey = "spotify.sdkSession"
 
     /// 세션 세대 번호. 로그아웃(clearSession)마다 1 올림 → 그 전에 시작한 승인·갱신의 결과는 버림 (검토 2차 리뷰)
@@ -125,6 +131,7 @@ final class SpotifyRemote: NSObject, ObservableObject {
     override init() {
         super.init()
         session = Self.loadSession()
+        hasSession = session != nil   // 자기 init 안에서는 didSet이 불리지 않으므로 직접 맞춤 (작업 031)
         updateAuthAction()
     }
 
@@ -175,9 +182,10 @@ final class SpotifyRemote: NSObject, ObservableObject {
         sessionManager.application(UIApplication.shared, open: url, options: [:])
     }
 
-    /// 로그아웃 때: 연결을 끊고 승인 세션을 메모리·키체인에서 지움. 세대를 올려 진행 중인 승인·갱신 결과는 버림
-    func clearSession() {
-        disconnect(reason: "로그아웃")
+    /// 로그아웃·[Spotify 앱 연결 해제](작업 031) 때: 연결을 끊고 승인 세션을 메모리·키체인에서 지움. 세대를 올려 진행 중인 승인·갱신 결과는 버림
+    /// - Parameter reason: 끊김 이유 문구 (로그 `⚡ SDK 연결 끊음 (이유)`). 동작은 같음
+    func clearSession(reason: String = "로그아웃") {
+        disconnect(reason: reason)
         generation += 1
         renewingFor = nil
         renewFailures = 0   // 작업 030
