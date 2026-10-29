@@ -1,7 +1,6 @@
 // 위젯 확장 타깃 — 잠금화면 카드 / 다이내믹 아일랜드 모양
 // 카드는 가사(이전·현재·다음 줄)만 보여 주고, 다이내믹 아일랜드는 비워 둠
 import ActivityKit
-import AppIntents
 import SwiftUI
 import WidgetKit
 
@@ -11,7 +10,7 @@ struct LyricsLiveActivity: Widget {
             LockScreenLyricsView(state: context.state)
                 .activityBackgroundTint(Color.black.opacity(0.35))
                 .activitySystemActionForegroundColor(.white)
-                // 카드를 누르면 앱이 이 주소를 받아 Spotify 앱을 열어요 (작업 009). ▶︎ 버튼 영역은 버튼(인텐트)이 우선
+                // 카드를 누르면 앱이 이 주소를 받아 Spotify 앱을 열어요 (작업 009). 카드에서 재생 제어는 하지 않음 (작업 026)
                 .widgetURL(URL(string: "livelyrics://open-spotify"))
 
         } dynamicIsland: { context in
@@ -50,19 +49,6 @@ struct LockScreenLyricsView: View {
             if !state.next.isEmpty {
                 Text(state.next)
                     .font(.caption).foregroundStyle(.white.opacity(0.45))
-            }
-            // 일시정지 상태일 때만: 누르면 앱을 깨워 재생·위치 추적·가사를 다시 연결
-            if !state.isPlaying {
-                Button(intent: ResumeLyricsIntent()) {
-                    Text("▶︎ 가사 다시 켜기")
-                        .font(.caption.bold())
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
-                        .background(.white.opacity(0.18), in: Capsule())
-                }
-                .buttonStyle(.plain)
-                .padding(.top, 4)
             }
         }
         .lineLimit(1)
