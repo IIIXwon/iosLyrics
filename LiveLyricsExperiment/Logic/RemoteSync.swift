@@ -55,6 +55,14 @@ nonisolated enum RemoteAuthPlan {
         return canRenew ? .renew : .needAuthorize
     }
 
+    /// 세션 갱신이 연속 이 횟수만큼 실패하면 갱신을 포기하고 승인 왕복으로 새 세션을 받음 (작업 030)
+    static let renewGiveUpAfter = 2
+
+    /// refresh token이 있고 연속 갱신 실패가 renewGiveUpAfter 미만이면 true (작업 030)
+    static func canRenew(hasRefreshToken: Bool, renewFailures: Int) -> Bool {
+        hasRefreshToken && renewFailures < renewGiveUpAfter
+    }
+
     /// [Spotify 앱 연결] 버튼: Web API 로그인돼 있고 SDK 승인이 필요할 때만
     static func showsAuthorizeButton(loggedIn: Bool, action: Action) -> Bool {
         loggedIn && action == .needAuthorize
@@ -73,10 +81,12 @@ nonisolated enum CardTapPlan {
     /// 추적 중 + Web API 로그인 + SDK 미연결 + 승인 세션으로 연결 가능(authAction != .needAuthorize)이면 .reconnect, 그 밖은 .openSpotify
     /// 연결 시도 중이어도 .reconnect (029 리뷰 수용 A): 카드 탭으로 앱이 열릴 때 화면 복귀가 먼저 와서 옛 세션으로 시도가 시작돼 있을 수 있음
     /// → 왕복으로 새 세션을 받고, 진행 중인 시도가 끝나면 새 세션으로 다시 연결 (ExperimentController.remoteConnectAfterAttempt)
+    /// hasSession: 키체인에 승인 세션이 있음(= 한 번 승인함, 작업 030) → needAuthorize여도(만료·갱신 불가) 승인 왕복으로 재승인
+    /// 세션이 없으면(첫 승인 전·로그아웃 뒤) 승인 화면을 띄우지 않고 Spotify만 연다
     static func action(isRunning: Bool, loggedIn: Bool, remoteConnected: Bool,
-                       authAction: RemoteAuthPlan.Action) -> Action {
+                       authAction: RemoteAuthPlan.Action, hasSession: Bool = false) -> Action {
         guard isRunning, loggedIn, !remoteConnected,
-              authAction != .needAuthorize else { return .openSpotify }
+              authAction != .needAuthorize || hasSession else { return .openSpotify }
         return .reconnect
     }
 }

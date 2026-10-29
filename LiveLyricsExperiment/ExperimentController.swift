@@ -534,6 +534,7 @@ final class ExperimentController: ObservableObject {
     /// 재생이 시작되면 SDK 이벤트(025)나 폴링이 감지해 카드가 다시 갱신됨
     /// SDK가 끊겼으면 승인 왕복으로 다시 연결 (작업 029): Spotify가 잠깐 열렸다가 `livelyrics://callback`으로 자동 복귀
     /// → handleOpenURL(callback) → onAuthorized → remoteAuthorized() → tryRemoteConnect(foreground: true). 음악은 재생하지 않음
+    /// 세션이 있으면 만료·갱신 불가(needAuthorize)여도 같은 왕복으로 재승인 (작업 030)
     private func openSpotify() {
         resumeAfterQuotaBlockIfExpired()   // 앱이 멈춘 사이 한도 차단이 끝났으면 안내를 걷고 조회 재개 (아래 조건 판단 전에)
         guard let url = URL(string: "spotify:"), UIApplication.shared.canOpenURL(url) else {
@@ -548,11 +549,14 @@ final class ExperimentController: ObservableObject {
             if !nowPlaying.isRunning { nowPlaying.start() }
         }
         remote.updateAuthAction()   // 시간이 지나 만료에 가까워졌을 수 있으므로 판단 직전에 다시 계산
+        // 한 번 승인한 적 있으면(세션 있음) 세션 만료·갱신 불가여도 같은 승인 왕복으로 새 세션을 받음 (작업 030)
+        // 세션이 없으면(첫 승인 전·로그아웃 뒤) Spotify만 열고, 첫 승인은 앱의 [Spotify 앱 연결]로
         let plan = CardTapPlan.action(isRunning: isRunning, loggedIn: auth.isLoggedIn,
                                       remoteConnected: remote.isConnected,
-                                      authAction: remote.authAction)
+                                      authAction: remote.authAction,
+                                      hasSession: remote.hasSession)
         if plan == .reconnect {
-            if remote.authorize() {
+            if remote.authorize(reason: .cardTap) {
                 log("🔗 카드 탭 → SDK 끊김 — Spotify를 잠깐 거쳐 다시 연결 (음악은 재생하지 않아요)")
                 return
             }
@@ -1025,7 +1029,12 @@ final class ExperimentController: ObservableObject {
             // 승인 세션이 없거나 갱신할 수 없으면 연결해도 실패하므로 시도하지 않음 (안내는 세션당 1번)
             if !remoteAuthWarned {
                 remoteAuthWarned = true
-                log("⚡ Spotify 앱 연결 필요 — 앱에서 [Spotify 앱 연결]을 눌러 주세요")
+                if remote.hasSession {
+                    // 한 번 승인함 → 카드 탭 때 승인 왕복으로 자동 재승인 (작업 030)
+                    log("⚡ SDK 세션 만료·갱신 불가 — 잠금화면 카드를 탭하면 Spotify를 잠깐 거쳐 자동으로 다시 승인해요")
+                } else {
+                    log("⚡ Spotify 앱 연결 필요 — 앱에서 [Spotify 앱 연결]을 눌러 주세요")
+                }
             }
         case .started:
             remoteLastAttempt = now
