@@ -105,6 +105,8 @@ final class ExperimentController: ObservableObject {
         nowPlaying.onBlocked = { [weak self] until, body in self?.handleQuotaBlock(until: until, body: body) }
         remote.onState = { [weak self] in self?.nowPlaying.applyRemote($0) }
         remote.onConnectionChange = { [weak self] in self?.remoteConnectionChanged($0) }
+        // 우리가 끊던 연결이 마무리돼 막혔던 연결을 다시 시도 (031 리뷰 R1). 판단은 tryRemoteConnect 규칙 그대로
+        remote.onReadyToConnect = { [weak self] in self?.tryRemoteConnect(foreground: true) }
         remote.onFailure = { [weak self] in self?.remoteConnectFailed($0, key: $1) }
         remote.onAuthorized = { [weak self] in self?.remoteAuthorized() }
         remote.onLog = { [weak self] in self?.log($0) }
@@ -169,6 +171,33 @@ final class ExperimentController: ObservableObject {
         remote.clearSession()             // Spotify 앱 승인 세션도 같이 지움 (작업 025 검토 2차)
         log("👋 로그아웃 (Spotify 앱 연결도 해제)")
         readiness.refresh()
+    }
+
+    /// [Spotify 앱 연결 해제] (작업 031): SDK 승인 세션만 지움. Web API 로그인·추적·Live Activity는 그대로
+    /// 끊김 로그는 remoteConnectionChanged 규칙(`⚡ SDK 연결 끊음 (연결 해제)`), 폴링은 remoteConnected = false로 3초 간격 복귀
+    /// 해제 뒤 자동 재승인·재연결 없음: authAction == .needAuthorize, 카드 탭은 hasSession == false라 Spotify만 엶 (030 규칙)
+    /// SDK 진단 상태(시도 번호·직전 실패·안내 여부 등)도 정지 때와 같은 기준으로 초기화 → 새 세션의 첫 실패가 상세로 남음 (031 리뷰 R4)
+    func disconnectRemote() {
+        log("⚡ Spotify 앱 연결 해제 (Spotify 로그인은 유지 — 3초 폴링으로 계속)")
+        remote.clearSession(reason: Self.remoteDisconnectReason)
+        resetRemoteDiagnostics()
+    }
+
+    /// [Spotify 앱 연결 해제]의 끊김 이유 문구. 끊김 로그에서 "3초 폴링 복귀"를 붙일지 판단에도 씀 (031 리뷰 R2)
+    private static let remoteDisconnectReason = "연결 해제"
+
+    /// SDK 연결 진단 상태 초기화 (정지·연결 해제 공통, 031 리뷰 R4). SDK 연결 자체는 건드리지 않음
+    private func resetRemoteDiagnostics() {
+        remoteLastAttempt = nil
+        remoteLastFailure = nil
+        remoteAttemptCount = 0
+        remoteAuthWarned = false
+        remoteAttemptAppState = nil
+        remoteLastOutcome = nil
+        remoteBackgroundLogged = false
+        remoteOutcomeAtBackgroundLog = nil
+        remoteAttemptLogged = false
+        remoteConnectAfterAttempt = false
     }
 
     /// 백그라운드 없이 한 번만 조회 (연결 확인용)
@@ -271,16 +300,7 @@ final class ExperimentController: ObservableObject {
         Task { await ending?.end(nil, dismissalPolicy: .immediate) }
         location.stop()
         remote.disconnect()
-        remoteLastAttempt = nil
-        remoteLastFailure = nil
-        remoteAttemptCount = 0
-        remoteAuthWarned = false
-        remoteAttemptAppState = nil
-        remoteLastOutcome = nil
-        remoteBackgroundLogged = false
-        remoteOutcomeAtBackgroundLog = nil
-        remoteAttemptLogged = false
-        remoteConnectAfterAttempt = false
+        resetRemoteDiagnostics()
         isRunning = false
         log("⏹ 정지 (조회 \(nowPlaying.pollCount)회, 카드 갱신 \(activityUpdates)회, 갱신 생략 \(skippedUpdates)회)")
     }
@@ -1081,8 +1101,14 @@ final class ExperimentController: ObservableObject {
             remoteLastOutcome = "성공"
             log("⚡ SDK 연결됨 — 폴링 완화(재생 중 \(Int(PollTiming.connectedPlaying))초) · \(remoteSessionText())")
         } else if remote.lastDisconnectByUser {
-            // 정지·강제 종료로 우리가 끊은 경우 (폴링도 함께 멈추므로 "3초 폴링 복귀"가 아님)
-            log("⚡ SDK 연결 끊음 (\(remote.lastError ?? "정지"))")
+            // 우리가 끊은 경우. 정지·강제 종료·로그아웃은 폴링도 함께 멈추므로 "3초 폴링 복귀"가 아님
+            // [Spotify 앱 연결 해제]는 추적을 계속하므로 폴링이 3초 간격으로 돌아감 → 그렇게 적음 (031 리뷰 R2)
+            let reason = remote.lastError ?? "정지"
+            if reason == Self.remoteDisconnectReason && isRunning {
+                log("⚡ SDK 연결 끊음 (\(reason)) — 3초 폴링 복귀")
+            } else {
+                log("⚡ SDK 연결 끊음 (\(reason))")
+            }
         } else {
             log("⚡ SDK 연결 끊김 — 3초 폴링 복귀 (\(remote.lastError ?? "이유 없음"))")
         }

@@ -348,4 +348,22 @@ struct RemoteSyncTests {
         // then
         #expect(result == .openSpotify)
     }
+
+    // 031-1
+    @Test func 연결해제버튼_세션이있으면_보인다() {
+        // given // when
+        let result = RemoteAuthPlan.showsDisconnectButton(hasSession: true)
+
+        // then
+        #expect(result == true)
+    }
+
+    // 031-2
+    @Test func 연결해제버튼_세션이없으면_안보인다() {
+        // given // when
+        let result = RemoteAuthPlan.showsDisconnectButton(hasSession: false)
+
+        // then
+        #expect(result == false)
+    }
 }

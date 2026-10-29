@@ -15,10 +15,10 @@
 		309A07C4308EDC3200852D61 /* SpotifyConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 309A07C2308EDC3200852D61 /* SpotifyConfig.swift */; };
 		309A07C5308EDC3200852D61 /* SpotifyAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 309A07C1308EDC3200852D61 /* SpotifyAuth.swift */; };
 		309A07C6308EDC3200852D61 /* SpotifyAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 309A07C0308EDC3200852D61 /* SpotifyAPI.swift */; };
-		30A5025A00000000000000B2 /* SpotifyRemote.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30A5025A00000000000000B1 /* SpotifyRemote.swift */; };
 		309A07C7308EDC3200852D61 /* NowPlayingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 309A07BF308EDC3200852D61 /* NowPlayingService.swift */; };
 		309A07C9308EDC3200852D61 /* SpotifySecrets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 309A07C8308EDC3200852D61 /* SpotifySecrets.swift */; };
 		30A5025A00000000000000A1 /* SpotifyiOS in Frameworks */ = {isa = PBXBuildFile; productRef = 30A5025A00000000000000A2 /* SpotifyiOS */; };
+		30A5025A00000000000000B2 /* SpotifyRemote.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30A5025A00000000000000B1 /* SpotifyRemote.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -59,10 +59,10 @@
 		309A079E308E5FD900852D61 /* LyricsActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsActivityAttributes.swift; sourceTree = "<group>"; };
 		309A07BF308EDC3200852D61 /* NowPlayingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingService.swift; sourceTree = "<group>"; };
 		309A07C0308EDC3200852D61 /* SpotifyAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyAPI.swift; sourceTree = "<group>"; };
-		30A5025A00000000000000B1 /* SpotifyRemote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyRemote.swift; sourceTree = "<group>"; };
 		309A07C1308EDC3200852D61 /* SpotifyAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyAuth.swift; sourceTree = "<group>"; };
 		309A07C2308EDC3200852D61 /* SpotifyConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyConfig.swift; sourceTree = "<group>"; };
 		309A07C8308EDC3200852D61 /* SpotifySecrets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifySecrets.swift; sourceTree = "<group>"; };
+		30A5025A00000000000000B1 /* SpotifyRemote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyRemote.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
