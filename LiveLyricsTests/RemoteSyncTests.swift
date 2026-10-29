@@ -198,11 +198,10 @@ struct RemoteSyncTests {
     }
 
     private func 카드탭(isRunning: Bool = true, loggedIn: Bool = true,
-                      remoteConnected: Bool = false, remoteConnecting: Bool = false,
+                      remoteConnected: Bool = false,
                       authAction: RemoteAuthPlan.Action = .connect) -> CardTapPlan.Action {
         CardTapPlan.action(isRunning: isRunning, loggedIn: loggedIn,
                            remoteConnected: remoteConnected,
-                           remoteConnecting: remoteConnecting,
                            authAction: authAction)
     }
 
@@ -237,15 +236,6 @@ struct RemoteSyncTests {
     @Test func 카드탭판단_SDK가연결돼있으면_스포티파이만연다() {
         // given // when
         let result = 카드탭(remoteConnected: true)
-
-        // then
-        #expect(result == .openSpotify)
-    }
-
-    // 029-5
-    @Test func 카드탭판단_SDK연결시도중이면_스포티파이만연다() {
-        // given // when
-        let result = 카드탭(remoteConnecting: true)
 
         // then
         #expect(result == .openSpotify)
