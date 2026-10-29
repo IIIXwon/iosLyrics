@@ -16,15 +16,16 @@ final class ReadinessModel: ObservableObject {
 
     var onLog: (@MainActor (String) -> Void)?
 
-    private let auth: SpotifyAuth
+    /// 로그인 = Spotify 앱 승인 세션 (작업 032)
+    private let remote: SpotifyRemote
     private let location: LocationKeepAlive
     private var servicesEnabled = true            // 기기 전체 위치 서비스 (마지막으로 확인한 값)
     private var previousReady: [String: Bool] = [:]
 
     var hasProblem: Bool { items.contains { !$0.isReady } }
 
-    init(auth: SpotifyAuth, location: LocationKeepAlive) {
-        self.auth = auth
+    init(remote: SpotifyRemote, location: LocationKeepAlive) {
+        self.remote = remote
         self.location = location
         apply(logChanges: false)
         refresh(logChanges: false)
@@ -72,8 +73,9 @@ final class ReadinessModel: ObservableObject {
     private func makeItems() -> [ReadinessItem] {
         // ① Spotify 로그인 (버튼 없음 — 로그인/로그아웃은 "Spotify" 칸에서)
         let spotify = ReadinessRules.spotifyItem(isConfigured: SpotifyConfig.isConfigured,
-                                                 isLoggedIn: auth.isLoggedIn,
-                                                 needsRelogin: auth.needsRelogin)
+                                                 isLoggedIn: remote.isLoggedIn,
+                                                 // 권한 부족은 isLoggedIn == false로 처리 (작업 032)
+                                                 needsRelogin: false)
 
         // ①-2 Spotify 조회 (호출 한도로 막혔는지) — 막혀 있으면 자동 시작도 하지 않음
         let quota: ReadinessItem
