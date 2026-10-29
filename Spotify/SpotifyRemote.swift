@@ -32,7 +32,7 @@ final class SpotifyRemote: NSObject, ObservableObject {
     enum AuthorizeReason {
         /// 앱의 [Spotify 앱 연결] 버튼 (첫 승인)
         case button
-        /// 카드 탭 재연결·재승인 (작업 029·030) — 한 번 승인한 뒤라 Spotify를 거쳐 자동으로 돌아옴
+        /// 카드 탭 재연결·재승인 (작업 029·030) — Spotify를 거쳐 돌아옴 (세션 만료 재승인이면 동의 화면이 뜰 수도 있음)
         case cardTap
     }
 
@@ -163,7 +163,7 @@ final class SpotifyRemote: NSObject, ObservableObject {
         case .button:
             onLog?("⚡ Spotify 앱으로 이동해 승인 요청 (음악은 재생하지 않아요)")
         case .cardTap:
-            onLog?("⚡ Spotify 앱 거쳐 자동 재연결 요청 (음악은 재생하지 않아요)")
+            onLog?("⚡ Spotify 앱 거쳐 재연결 요청 (음악은 재생하지 않아요)")
         }
         sessionManager.initiateSession(with: .appRemoteControl, options: .clientOnly, campaign: nil)
         return true
@@ -283,7 +283,9 @@ final class SpotifyRemote: NSObject, ObservableObject {
         }
         if let pending = authorizing, pending.generation == generation {
             authorizing = nil
-            onLog?("⚡ Spotify 앱 승인 실패: \(text)")
+            // 걸린 시간으로 동의 화면 취소(길어짐)와 바로 실패를 구분 (작업 030 검토 2차)
+            let elapsed = max(0, Int(Self.now - pending.startedAt))
+            onLog?("⚡ Spotify 앱 승인 실패: \(text) · 요청 후 \(elapsed)초")
             return
         }
         // 이번 세대에 보낸 요청이 없음 → 로그아웃 전 요청의 결과
