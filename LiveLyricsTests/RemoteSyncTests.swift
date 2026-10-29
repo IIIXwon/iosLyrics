@@ -258,4 +258,94 @@ struct RemoteSyncTests {
         // then
         #expect(result == .openSpotify)
     }
+
+    // 030-1
+    @Test func 갱신가능판단_토큰있고실패0번이면_true() {
+        // given // when
+        let result = RemoteAuthPlan.canRenew(hasRefreshToken: true, renewFailures: 0)
+
+        // then
+        #expect(result == true)
+    }
+
+    // 030-2
+    @Test func 갱신가능판단_토큰있고실패1번이면_true() {
+        // given // when
+        let result = RemoteAuthPlan.canRenew(hasRefreshToken: true, renewFailures: 1)
+
+        // then
+        #expect(result == true)
+    }
+
+    // 030-3
+    @Test func 갱신가능판단_토큰있어도실패2번이면_false() {
+        // given // when
+        let result = RemoteAuthPlan.canRenew(hasRefreshToken: true, renewFailures: 2)
+
+        // then
+        #expect(result == false)
+    }
+
+    // 030-4
+    @Test func 갱신가능판단_토큰없으면_false() {
+        // given // when
+        let result = RemoteAuthPlan.canRenew(hasRefreshToken: false, renewFailures: 0)
+
+        // then
+        #expect(result == false)
+    }
+
+    private func 재승인카드탭(isRunning: Bool = true, loggedIn: Bool = true,
+                         remoteConnected: Bool = false,
+                         authAction: RemoteAuthPlan.Action = .needAuthorize,
+                         hasSession: Bool = true) -> CardTapPlan.Action {
+        CardTapPlan.action(isRunning: isRunning, loggedIn: loggedIn,
+                           remoteConnected: remoteConnected,
+                           authAction: authAction, hasSession: hasSession)
+    }
+
+    // 030-5
+    @Test func 카드탭판단_세션있고만료갱신불가면_재연결한다() {
+        // given // when
+        let result = 재승인카드탭()
+
+        // then
+        #expect(result == .reconnect)
+    }
+
+    // 030-6
+    @Test func 카드탭판단_세션이없으면_승인필요여도_스포티파이만연다() {
+        // given // when
+        let result = 재승인카드탭(hasSession: false)
+
+        // then
+        #expect(result == .openSpotify)
+    }
+
+    // 030-7
+    @Test func 카드탭판단_세션있어도SDK가연결돼있으면_스포티파이만연다() {
+        // given // when
+        let result = 재승인카드탭(remoteConnected: true)
+
+        // then
+        #expect(result == .openSpotify)
+    }
+
+    // 030-8
+    @Test func 카드탭판단_세션있어도추적중이아니면_스포티파이만연다() {
+        // given // when
+        let result = 재승인카드탭(isRunning: false)
+
+        // then
+        #expect(result == .openSpotify)
+    }
+
+    // 030-9
+    @Test func 카드탭판단_세션있어도로그인안돼있으면_스포티파이만연다() {
+        // given // when
+        let result = 재승인카드탭(loggedIn: false)
+
+        // then
+        #expect(result == .openSpotify)
+    }
 }
