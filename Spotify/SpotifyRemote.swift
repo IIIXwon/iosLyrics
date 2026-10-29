@@ -56,8 +56,10 @@ final class SpotifyRemote: NSObject, ObservableObject {
 
     /// authorize()를 부른 경로 — 승인 옵션·로그 문구가 다름 (작업 030 검토 2차, 032)
     enum AuthorizeReason {
-        /// 앱의 [Spotify로 로그인]·[Spotify 다시 연결] 버튼 (작업 032). Spotify 앱이 있으면 앱, 없으면 웹에서 승인
+        /// 앱의 [Spotify로 로그인] 버튼 (작업 032). Spotify 앱이 있으면 앱, 없으면 웹에서 승인
         case login
+        /// 앱의 [Spotify 다시 연결] 버튼 (작업 032 리뷰 R4) — 세션 만료·갱신 포기 때. 옵션·권한 기록은 로그인과 같고 로그만 "다시 연결"
+        case reauthorize
         /// 카드 탭 재연결·재승인 (작업 029·030) — Spotify를 거쳐 돌아옴 (세션 만료 재승인이면 동의 화면이 뜰 수도 있음)
         case cardTap
     }
@@ -135,16 +137,24 @@ final class SpotifyRemote: NSObject, ObservableObject {
     private struct Pending {
         let generation: Int
         let startedAt: TimeInterval
-        /// 승인 요청일 때만: 부른 경로와 요청한 권한 문자열 (작업 032)
-        var reason: AuthorizeReason? = nil
-        var scopes: String? = nil
     }
-    /// [Spotify로 로그인]·카드 탭으로 보낸 승인 요청
-    private var authorizing: Pending?
+    /// 승인 요청 = 시작 세대·시각 + 부른 경로 + 요청한 권한 문자열 (작업 032 리뷰 R9: 값이 항상 있게 따로 둠)
+    private struct AuthorizeRequest {
+        let pending: Pending
+        let reason: AuthorizeReason
+        let scopes: String
+    }
+    /// [Spotify로 로그인]·[Spotify 다시 연결]·카드 탭으로 보낸 승인 요청
+    private var authorizing: AuthorizeRequest?
     /// SDK에 보낸 세션 갱신 요청 (renewSession). 진행 중이면 다시 부르지 않음 — SDK 연결·Web API 쪽 공용 (작업 032)
     private var renewing: Pending?
+    /// 세션 갱신 결과를 기다리는 Web API 쪽 호출 하나 — 결과를 받을 곳과 15초 시간 초과 Task (작업 032, 리뷰 R7)
+    private struct RenewWaiter {
+        let continuation: CheckedContinuation<String, Error>
+        let timeout: Task<Void, Never>
+    }
     /// 세션 갱신 결과를 기다리는 Web API 쪽 호출들 (작업 032). 갱신 성공·실패·시간 초과·로그아웃 때 끝냄
-    private var renewWaiters: [Int: CheckedContinuation<String, Error>] = [:]
+    private var renewWaiters: [Int: RenewWaiter] = [:]
     private var nextWaiterID = 0
     /// 세션 갱신 결과를 기다리는 연결 시도 번호 (없으면 nil). 시간 초과·끊기·로그아웃에서 지움
     private var renewingFor: Int?
@@ -187,11 +197,15 @@ final class SpotifyRemote: NSObject, ObservableObject {
         updateAuthAction()
     }
 
-    /// 옛 웹 로그인의 리프레시 토큰(키체인)·권한 기록(UserDefaults)을 지움 — 있을 때만, 로그 없음 (작업 032)
+    /// 옛 웹 로그인의 리프레시 토큰(키체인)·권한 기록(UserDefaults)을 지움 — 없어도 지우기만 함(읽지 않음, 리뷰 R10), 로그 없음 (작업 032)
     private static func removeLegacyLogin() {
-        if Keychain.readData(legacyRefreshTokenKey) != nil { Keychain.delete(legacyRefreshTokenKey) }
-        let defaults = UserDefaults.standard
-        if defaults.object(forKey: legacyGrantedScopesKey) != nil { defaults.removeObject(forKey: legacyGrantedScopesKey) }
+        Keychain.delete(legacyRefreshTokenKey)
+        UserDefaults.standard.removeObject(forKey: legacyGrantedScopesKey)
+    }
+
+    /// 032 전에 받은 SDK 세션인지 (세션은 있는데 로그인 권한 기록이 없음) — 앱 시작 때 다시 로그인 안내용 (리뷰 R5)
+    var hasPreLoginSession: Bool {
+        session != nil && UserDefaults.standard.string(forKey: Self.loginScopesKey) == nil
     }
 
     /// 로그인 상태를 다시 계산 (작업 032). 바뀔 때만 발행
@@ -223,7 +237,7 @@ final class SpotifyRemote: NSObject, ObservableObject {
     /// [Spotify로 로그인]·[Spotify 다시 연결](작업 032)·카드 탭 재연결(작업 029)·카드 탭 재승인(세션 만료·갱신 불가, 작업 030):
     /// Spotify 앱(없으면 웹, 로그인만)으로 넘어가 승인 → `livelyrics://callback`으로 돌아옴. 음악은 재생하지 않음
     /// 권한은 SpotifyConfig.scopes 전체(SDK 연결 + Web API 읽기)를 요청 (작업 032)
-    /// - Parameter reason: 부른 경로. 로그인은 `.default`(앱 있으면 앱, 없으면 웹), 카드 탭은 `.clientOnly`
+    /// - Parameter reason: 부른 경로. 로그인·다시 연결은 `.default`(앱 있으면 앱, 없으면 웹), 카드 탭은 `.clientOnly`
     /// - Returns: 승인 요청을 보냈으면 true, 세션 갱신 중이라 건너뛰었으면 false
     @discardableResult
     func authorize(reason: AuthorizeReason) -> Bool {
@@ -234,12 +248,16 @@ final class SpotifyRemote: NSObject, ObservableObject {
         }
         renewing = nil
         let scopes = SpotifyConfig.scopes.joined(separator: " ")
-        authorizing = Pending(generation: generation, startedAt: Self.now, reason: reason, scopes: scopes)
+        authorizing = AuthorizeRequest(pending: Pending(generation: generation, startedAt: Self.now),
+                                       reason: reason, scopes: scopes)
         let options: AuthorizationOptions
         switch reason {
         case .login:
             options = .default
             onLog?("⚡ Spotify로 로그인 — Spotify 앱(없으면 웹)에서 승인 요청 (음악은 재생하지 않아요)")
+        case .reauthorize:
+            options = .default
+            onLog?("⚡ Spotify 다시 연결 — Spotify 앱(없으면 웹)에서 다시 승인 요청 (음악은 재생하지 않아요)")
         case .cardTap:
             options = .clientOnly
             onLog?("⚡ Spotify 앱 거쳐 재연결 요청 (음악은 재생하지 않아요)")
@@ -311,17 +329,19 @@ final class SpotifyRemote: NSObject, ObservableObject {
     }
 
     private func sessionInitiated(_ data: Data?) {
-        guard let pending = authorizing, pending.generation == generation else {
+        guard let request = authorizing, request.pending.generation == generation else {
             if authorizing != nil { authorizing = nil }
             ignoreStale()
             return
         }
         authorizing = nil
         // 요청~완료 시간: 동의 화면을 눌러야 했으면 길어짐 (작업 030 검토 2차)
-        let elapsed = max(0, Int(Self.now - pending.startedAt))
-        guard store(data, scopes: pending.scopes ?? SpotifyConfig.scopes.joined(separator: " ")) != nil else { return }
-        onLog?("⚡ Spotify 앱 승인 완료 (만료까지 \(Self.minutesText(sessionRemaining)) · 요청 후 \(elapsed)초)")
-        onAuthorized?(pending.reason ?? .login)
+        let elapsed = max(0, Int(Self.now - request.pending.startedAt))
+        guard store(data, scopes: request.scopes) != nil else { return }
+        // [Spotify 다시 연결]은 완료 줄에 경로 표시 (리뷰 R4). 로그인·카드 탭은 기존 문구
+        let label = request.reason == .reauthorize ? "(다시 연결)" : ""
+        onLog?("⚡ Spotify 앱 승인 완료\(label) (만료까지 \(Self.minutesText(sessionRemaining)) · 요청 후 \(elapsed)초)")
+        onAuthorized?(request.reason)
     }
 
     private func sessionRenewed(_ data: Data?) {
@@ -351,16 +371,23 @@ final class SpotifyRemote: NSObject, ObservableObject {
     }
 
     /// 승인 또는 갱신 실패. SDK는 둘을 같은 콜백으로 알려 주므로 이번 세대에 보낸 요청으로 구분
-    /// (갱신 중에는 승인 요청을 받지 않으므로 둘이 동시에 이번 세대일 수 없음)
-    private func sessionFailed(_ text: String, key: String) {
+    /// 둘은 겹치지 않음: 갱신 중(renewStaleAfter 안)에는 승인 요청을 보내지 않고, 승인 결과를 기다리는 중(renewStaleAfter 안)에는
+    /// SDK 연결 쪽(connect)·Web API 쪽 모두 갱신을 보내지 않음 (리뷰 R1)
+    /// - Parameter network: 네트워크 오류(NSURLErrorDomain)인지 — 갱신 실패여도 포기 횟수에 세지 않음 (리뷰 R2)
+    private func sessionFailed(_ text: String, key: String, network: Bool) {
         if let pending = renewing, pending.generation == generation {
             renewing = nil
-            onLog?("⚡ SDK 세션 갱신 실패: \(text)")
-            // 연속 실패 수를 세고, 포기 기준에 막 닿았으면 안내 (작업 030). 세션은 지우지 않음
-            renewFailures += 1
-            updateAuthAction()
-            if renewFailures == RemoteAuthPlan.renewGiveUpAfter {
-                onLog?("⚡ SDK 세션 갱신이 \(renewFailures)번 연속 실패 — 잠금화면 카드를 탭하거나 앱에서 [Spotify 다시 연결]을 눌러 주세요")
+            if network {
+                // 신호 끊김 같은 일시 오류로 갱신을 포기하면 Web API 폴링까지 멈추므로 세지 않음 (리뷰 R2). 다음 조회·연결 때 다시 갱신
+                onLog?("⚡ SDK 세션 갱신 실패(네트워크 오류 — 포기 횟수에 세지 않음): \(text)")
+            } else {
+                onLog?("⚡ SDK 세션 갱신 실패: \(text)")
+                // 연속 실패 수를 세고, 포기 기준에 막 닿았으면 안내 (작업 030). 세션은 지우지 않음
+                renewFailures += 1
+                updateAuthAction()
+                if renewFailures == RemoteAuthPlan.renewGiveUpAfter {
+                    onLog?("⚡ SDK 세션 갱신이 \(renewFailures)번 연속 실패 — 잠금화면 카드를 탭하거나 앱에서 [Spotify 다시 연결]을 눌러 주세요")
+                }
             }
             finishRenewWaiters(.failure(renewFailures >= RemoteAuthPlan.renewGiveUpAfter
                                         ? SpotifyLoginError.renewUnavailable : SpotifyLoginError.renewFailed))
@@ -371,11 +398,16 @@ final class SpotifyRemote: NSObject, ObservableObject {
             fail("세션 갱신 실패", key: "세션 갱신 " + key)
             return
         }
-        if let pending = authorizing, pending.generation == generation {
+        if let request = authorizing, request.pending.generation == generation {
             authorizing = nil
             // 걸린 시간으로 동의 화면 취소(길어짐)와 바로 실패를 구분 (작업 030 검토 2차)
-            let elapsed = max(0, Int(Self.now - pending.startedAt))
-            let path = pending.reason == .cardTap ? "카드 탭" : "로그인"
+            let elapsed = max(0, Int(Self.now - request.pending.startedAt))
+            let path: String
+            switch request.reason {
+            case .login: path = "로그인"
+            case .reauthorize: path = "다시 연결"
+            case .cardTap: path = "카드 탭"
+            }
             onLog?("⚡ Spotify 앱 승인 실패(\(path)): \(text) · 요청 후 \(elapsed)초")
             return
         }
@@ -395,8 +427,10 @@ final class SpotifyRemote: NSObject, ObservableObject {
         // 승인 결과를 기다리는 중이면 세션이 있어도 연결하지 않음 (작업 029)
         // 왕복 뒤 화면 복귀(appBecameActive)가 새 세션보다 먼저 와서 옛 세션으로 연결을 시작하면
         // isConnecting 때문에 onAuthorized의 연결이 막힘 → 새 세션을 받은 onAuthorized에서 1번 연결
-        if isActive(authorizing, within: authorizeWait) { return .authorizing }
+        if isActive(authorizing?.pending, within: authorizeWait) { return .authorizing }
         guard authAction != .needAuthorize, let session else { return .needAuthorize }
+        // 갱신이 필요한데 승인 요청이 아직 결과 없이 남아 있으면(renewStaleAfter 안) 갱신을 보내지 않음 — 승인과 겹치지 않게 (리뷰 R1)
+        if authAction == .renew, isActive(authorizing?.pending, within: renewStaleAfter) { return .authorizing }
         // 우리가 끊은 연결의 콜백이 아직 안 옴 → 새 연결을 시작하면 그 콜백이 새 시도 것으로 섞임 (031 리뷰 R1)
         // 마무리되면 onReadyToConnect로 다시 시도. 콜백이 connectTimeout 넘게 안 오면 기다리지 않음
         if let since = finishingDisconnectSince {
@@ -442,8 +476,10 @@ final class SpotifyRemote: NSObject, ObservableObject {
     }
 
     /// 401 재시도용: 만료 전이어도 세션을 1번 갱신하고 새 토큰 (진행 중인 갱신이 있으면 그 결과)
-    func renewedWebAPIToken() async throws -> String {
-        guard isLoggedIn, session != nil else { throw SpotifyLoginError.notLoggedIn }
+    /// - Parameter rejected: 401을 받은 요청에 쓴 토큰. 지금 세션 토큰과 다르면(그 사이 갱신됨) 갱신하지 않고 지금 토큰 (리뷰 R6)
+    func renewedWebAPIToken(rejected: String) async throws -> String {
+        guard isLoggedIn, let session else { throw SpotifyLoginError.notLoggedIn }
+        if session.accessToken != rejected { return session.accessToken }
         return try await renewForWebAPI()
     }
 
@@ -455,8 +491,9 @@ final class SpotifyRemote: NSObject, ObservableObject {
             updateAuthAction()   // 포기 상태면 [Spotify 다시 연결]이 보이게
             throw SpotifyLoginError.renewUnavailable
         }
-        // 승인 결과를 기다리는 중에는 갱신을 보내지 않음 (SDK 실패 콜백이 하나라 승인·갱신을 구분할 수 없게 됨)
-        if isActive(authorizing, within: authorizeWait) { throw SpotifyLoginError.authorizing }
+        // 승인 요청이 아직 결과 없이 남아 있으면(renewStaleAfter 안) 갱신을 보내지 않음
+        // (SDK 실패 콜백이 하나라 승인·갱신이 겹치면 실패가 갱신 쪽으로 잘못 처리됨, 리뷰 R1)
+        if isActive(authorizing?.pending, within: renewStaleAfter) { throw SpotifyLoginError.authorizing }
         startRenewIfNeeded()
         return try await waitForRenew()
     }
@@ -467,21 +504,25 @@ final class SpotifyRemote: NSObject, ObservableObject {
         let id = nextWaiterID
         let nanos = UInt64(connectTimeout * 1_000_000_000)
         return try await withCheckedThrowingContinuation { continuation in
-            renewWaiters[id] = continuation
-            Task { [weak self] in
+            let timeout = Task { [weak self] in
                 try? await Task.sleep(nanoseconds: nanos)
-                guard let self, let waiter = self.renewWaiters.removeValue(forKey: id) else { return }
-                waiter.resume(throwing: SpotifyLoginError.renewTimeout)
+                guard !Task.isCancelled, let self,
+                      let waiter = self.renewWaiters.removeValue(forKey: id) else { return }
+                waiter.continuation.resume(throwing: SpotifyLoginError.renewTimeout)
             }
+            renewWaiters[id] = RenewWaiter(continuation: continuation, timeout: timeout)
         }
     }
 
-    /// 갱신을 기다리던 Web API 쪽 호출을 모두 끝냄 (각 continuation은 한 번만 resume)
+    /// 갱신을 기다리던 Web API 쪽 호출을 모두 끝냄 (각 continuation은 한 번만 resume). 시간 초과 Task는 취소 (리뷰 R7)
     private func finishRenewWaiters(_ result: Result<String, Error>) {
         guard !renewWaiters.isEmpty else { return }
         let waiters = renewWaiters.values
         renewWaiters.removeAll()
-        for waiter in waiters { waiter.resume(with: result) }
+        for waiter in waiters {
+            waiter.timeout.cancel()
+            waiter.continuation.resume(with: result)
+        }
     }
 
     private func connectAppRemote(token: String) {
@@ -555,6 +596,15 @@ final class SpotifyRemote: NSObject, ObservableObject {
         return "domain=\(ns.domain) code=\(ns.code)"
     }
 
+    /// 일시적인 네트워크 오류인지 (오류 또는 한 단계 아래 원인이 NSURLErrorDomain — 신호 끊김·시간 초과·호스트 못 찾음 등, 리뷰 R2)
+    /// 세션 갱신 실패 중 이런 오류는 포기 횟수(renewFailures)에 세지 않음
+    nonisolated static func isNetworkError(_ error: Error) -> Bool {
+        let ns = error as NSError
+        if ns.domain == NSURLErrorDomain { return true }
+        if let under = ns.userInfo[NSUnderlyingErrorKey] as? NSError, under.domain == NSURLErrorDomain { return true }
+        return false
+    }
+
     private func fail(_ reason: String, key: String) {
         lastError = reason
         onFailure?(reason, key)
@@ -617,7 +667,8 @@ extension SpotifyRemote: SPTSessionManagerDelegate {
     nonisolated func sessionManager(manager: SPTSessionManager, didFailWith error: Error) {
         let text = Self.describe(error)
         let key = Self.failureKey(error)
-        Task { @MainActor in self.sessionFailed(text, key: key) }
+        let network = Self.isNetworkError(error)
+        Task { @MainActor in self.sessionFailed(text, key: key, network: network) }
     }
 
     nonisolated func sessionManager(manager: SPTSessionManager, didRenew session: SPTSession) {

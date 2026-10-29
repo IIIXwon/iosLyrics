@@ -21,12 +21,15 @@ final class ReadinessModel: ObservableObject {
     private let location: LocationKeepAlive
     private var servicesEnabled = true            // 기기 전체 위치 서비스 (마지막으로 확인한 값)
     private var previousReady: [String: Bool] = [:]
+    /// 앱 시작 때 032 전 세션(세션 있음·권한 기록 없음)이었으면 true → onLog가 연결된 뒤 첫 확인에서 안내 1번 (리뷰 R5)
+    private var preLoginNoticePending: Bool
 
     var hasProblem: Bool { items.contains { !$0.isReady } }
 
     init(remote: SpotifyRemote, location: LocationKeepAlive) {
         self.remote = remote
         self.location = location
+        preLoginNoticePending = remote.hasPreLoginSession
         apply(logChanges: false)
         refresh(logChanges: false)
 
@@ -58,6 +61,14 @@ final class ReadinessModel: ObservableObject {
     }
 
     private func apply(logChanges: Bool) {
+        // 로그인 방식이 바뀐 뒤(032) 처음 실행 — 안내 1번. init 안에서는 onLog가 아직 없어서 연결된 뒤 첫 확인 때 남김
+        // 그 사이 다시 로그인했으면 남기지 않음
+        if preLoginNoticePending, let onLog {
+            preLoginNoticePending = false
+            if remote.hasPreLoginSession {
+                onLog("⚠️ 로그인 방식이 바뀌었어요 — [Spotify로 로그인]을 한 번 다시 눌러 주세요")
+            }
+        }
         let new = makeItems()
         if logChanges {
             for item in new {

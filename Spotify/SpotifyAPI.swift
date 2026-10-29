@@ -116,7 +116,8 @@ final class SpotifyAPI {
         case 204:
             return nil
         case 401 where retry:
-            let renewed = try await remote.renewedWebAPIToken()
+            // 이 요청에 쓴 토큰을 넘김 → 그 사이 다른 쪽이 이미 갱신했으면 다시 갱신하지 않음 (리뷰 R6)
+            let renewed = try await remote.renewedWebAPIToken(rejected: token)
             return try await get(urlString, kind: kind, retry: false, token: renewed)
         case 429:
             throw rateLimitError(http, data)

@@ -984,13 +984,14 @@ final class ExperimentController: ObservableObject {
         }
     }
 
-    /// [Spotify 다시 연결] 버튼 (작업 032: 세션 만료·갱신 포기 때만 보임). 로그인과 같은 승인 왕복. 음악은 재생하지 않음
+    /// [Spotify 다시 연결] 버튼 (작업 032: 세션 만료·갱신 포기 때만 보임). 로그인과 같은 승인 왕복(옵션·권한 기록 같음), 로그는 "다시 연결" (리뷰 R4)
+    /// 음악은 재생하지 않음. 완료 때 `✅ Spotify 로그인 성공`은 남기지 않음
     func authorizeRemote() {
-        remote.authorize(reason: .login)
+        remote.authorize(reason: .reauthorize)
     }
 
     /// Spotify 앱 승인이 끝남 → 안내를 다시 남길 수 있게 하고 바로 연결 시도 (화면에서 누른 것이므로 foreground)
-    /// 로그인 경로(.login)면 먼저 `✅ Spotify 로그인 성공` + 준비 상태 다시 확인 (작업 032)
+    /// 로그인 경로(.login)면 먼저 `✅ Spotify 로그인 성공` + 준비 상태 다시 확인 (작업 032). 다시 연결(.reauthorize)·카드 탭은 연결만
     /// 이전 연결 시도(옛 세션)가 진행 중이면 지금은 연결이 막히므로, 그 시도가 실패한 뒤 새 세션으로 다시 연결 (029 리뷰 수용 A)
     private func remoteAuthorized(reason: SpotifyRemote.AuthorizeReason) {
         if reason == .login {

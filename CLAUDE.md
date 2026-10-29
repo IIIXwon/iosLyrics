@@ -11,7 +11,7 @@ Spotify에서 재생 중인 곡의 **싱크 가사를 아이폰 잠금화면(Liv
 ## WHAT — 스택과 코드 지도
 
 - Swift / SwiftUI / ActivityKit(Live Activity) / WidgetKit / CoreLocation, **최소 iOS 16.4**
-- 외부: Spotify Web API (PKCE 로그인, 개발자 모드) · Spotify iOS SDK (SPM, 보조 출처, 025) · LRCLIB (가사 조회 전용)
+- 외부: Spotify Web API (개발자 모드, 토큰은 SDK 승인 세션 것, 032) · Spotify iOS SDK (SPM, 로그인 + 보조 출처, 025·032) · LRCLIB (가사 조회 전용)
 - 서버 없음. 외부 패키지는 SpotifyiOS(SPM) 하나. 가사·토큰은 기기 안에만 보관
 
 > 경로는 모두 **저장소 루트 기준**. `Spotify/`는 `LiveLyricsExperiment/` 안이 아니라 **루트에** 있다 (앱 타깃 소속). 파일은 이 경로로 바로 연다 — 경로를 짐작하거나 전체 목록을 훑지 말 것
@@ -25,13 +25,13 @@ Spotify에서 재생 중인 곡의 **싱크 가사를 아이폰 잠금화면(Liv
 | `LiveLyricsExperiment/ReadinessModel.swift` | 준비 상태 항목 모으기 (판단은 `Logic/ReadinessRules`) |
 | `LiveLyricsExperiment/StartTrackingIntent.swift` | 시작 App Intent |
 | `LiveLyricsExperiment/LocationKeepAlive.swift` | 백그라운드 유지용 저전력 위치 추적 |
-| `LiveLyricsExperiment/Logic/` | **순수 로직(`swift test` 대상, `import Foundation`만)**. `LyricsService`, `RemoteSync`(SDK 판단: `RemoteAuthPlan`·`CardTapPlan`), `AppButtons`, `ReadinessRules`, `LrclibUsage`·`DailyUsage`·`SpotifyQuota`(호출 수), `PollTiming`, `SpotifyQueue`, `IdleNotice`, `LogLimit` |
+| `LiveLyricsExperiment/Logic/` | **순수 로직(`swift test` 대상, `import Foundation`만)**. `LyricsService`, `RemoteSync`(SDK 판단: `RemoteAuthPlan`·`CardTapPlan`), `LoginScopes`(로그인 권한 판단), `AppButtons`, `ReadinessRules`, `LrclibUsage`·`DailyUsage`·`SpotifyQuota`(호출 수), `PollTiming`, `SpotifyQueue`, `IdleNotice`, `LogLimit` |
 | `LiveLyricsExperiment/Logic/LyricsService.swift` | LRCLIB 4단계 검색 + LRC 파싱 + 현재 줄 계산 + 앱 전용 저장 폴더(`LyricsStore`: `synced/`·`plain/`) |
 | `Spotify/SpotifyConfig.swift` | Client ID(`Spotify/SpotifySecrets.swift`, 읽지 않음), Redirect URI `livelyrics://callback`, scopes |
-| `Spotify/SpotifyAuth.swift` | PKCE 로그인, 토큰 갱신, 키체인(`AfterFirstUnlock`) 저장 |
-| `Spotify/SpotifyAPI.swift` | currently-playing 조회, 401 재시도, 429 Retry-After |
+| `Spotify/Keychain.swift` | 키체인(`AfterFirstUnlock`) 저장·읽기·삭제 |
+| `Spotify/SpotifyAPI.swift` | currently-playing·대기열 조회(토큰은 `SpotifyRemote`), 401 재시도, 429 Retry-After |
 | `Spotify/NowPlayingService.swift` | 폴링(재생 중 3초·일시정지 15초·곡 없음 10초, SDK 연결 중 15·30초), 곡 변경·일시정지·seek 감지, 위치 추정, SDK 이벤트 반영 |
-| `Spotify/SpotifyRemote.swift` | Spotify iOS SDK(App Remote) **유일한 창구**: [Spotify 앱 연결] 승인 세션(키체인), 플레이어 상태 구독 — 감지 전용 (025) |
+| `Spotify/SpotifyRemote.swift` | Spotify iOS SDK(App Remote) **유일한 창구** + **로그인·토큰의 유일한 창구**(032): [Spotify로 로그인] = SDK 승인 세션(키체인), Web API 토큰 제공·갱신, 플레이어 상태 구독 — 감지 전용 |
 
 **위젯 확장 타깃 `LyricsWidgetExtension`**
 | 파일 | 하는 일 |

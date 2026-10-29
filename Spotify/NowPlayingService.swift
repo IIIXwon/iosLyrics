@@ -88,8 +88,22 @@ final class NowPlayingService: ObservableObject {
 
     var isRunning: Bool { task != nil }
 
+    /// 마지막으로 로그에 남긴 로그인 오류(로그인 안 됨·세션 갱신 불가). 같은 상태 동안 1번만 남기려고 (작업 032 리뷰 R3)
+    /// 조회가 성공하거나 start()(다시 로그인 → 추적 시작)에서 지움 → 다음엔 다시 남김
+    private var loggedLoginError: SpotifyLoginError?
+
+    /// 이 오류를 로그에 남길지. 로그인 안 됨·갱신 불가는 같은 오류가 이어지면 처음 1번만, 그 밖은 항상 (리뷰 R3)
+    private func shouldLogError(_ error: Error) -> Bool {
+        guard let login = error as? SpotifyLoginError,
+              login == .notLoggedIn || login == .renewUnavailable else { return true }
+        if loggedLoginError == login { return false }
+        loggedLoginError = login
+        return true
+    }
+
     func start() {
         guard task == nil else { return }
+        loggedLoginError = nil
         status = "조회 시작"
         let waker = PollWaker()
         self.waker = waker
@@ -113,13 +127,14 @@ final class NowPlayingService: ObservableObject {
             let result = try await api.currentlyPlaying()
             let t1 = uptime
             pollCount += 1
+            loggedLoginError = nil
             handlePolled(result, stamp: (t0 + t1) / 2)
         } catch SpotifyAPIError.blocked(let until, let body) {
             status = "한도 차단"
             onBlocked?(until, body)
         } catch {
             if (error as? URLError)?.code == .cancelled { return }
-            onLog?("⚠️ 즉시 조회 오류: \(error.localizedDescription)")
+            if shouldLogError(error) { onLog?("⚠️ 즉시 조회 오류: \(error.localizedDescription)") }
         }
     }
 
@@ -197,6 +212,7 @@ final class NowPlayingService: ObservableObject {
                 let result = try await api.currentlyPlaying()
                 let t1 = uptime
                 pollCount += 1
+                loggedLoginError = nil   // 조회 성공 → 로그인 오류를 다시 남길 수 있게 (리뷰 R3)
                 handlePolled(result, stamp: (t0 + t1) / 2)   // 요청~응답 중간 시점을 기준으로
                 polled = true
             } catch is CancellationError {
@@ -216,8 +232,8 @@ final class NowPlayingService: ObservableObject {
             } catch {
                 if (error as? URLError)?.code == .cancelled { break }
                 status = "오류"
-                onLog?("❌ 조회 오류: \(error.localizedDescription)")
-                wait = interval * 3
+                if shouldLogError(error) { onLog?("❌ 조회 오류: \(error.localizedDescription)") }
+                wait = interval * 3   // 간격은 그대로 (리뷰 R3는 로그만)
             }
 
             // 곡이 곧 끝나면 그 직후에 바로 다시 조회하고, 끝났는데 Spotify가 아직 같은 곡을 주면 잠깐 1초 간격으로 다시 봄 (작업 021)
