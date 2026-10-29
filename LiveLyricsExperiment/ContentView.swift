@@ -13,10 +13,12 @@ struct ContentView: View {
             Form {
                 ReadinessSection(model: controller.readiness) { fix in handle(fix) }
 
-                SpotifySection(auth: controller.auth) {
+                SpotifySection(auth: controller.auth, remote: controller.remote) {
                     Task { await controller.login(using: webAuthenticationSession) }
                 } onLogout: {
                     controller.logout()
+                } onAuthorizeRemote: {
+                    controller.authorizeRemote()
                 }
 
                 Section {
@@ -52,11 +54,13 @@ struct ContentView: View {
             case .active:
                 controller.log("📱 앱 화면으로 복귀")
                 controller.readiness.refresh()   // 설정 앱에서 바꾸고 돌아왔을 수 있어서 준비 상태를 다시 확인
+                controller.appBecameActive()     // Spotify iOS SDK 다시 연결 (작업 025)
                 Task { await controller.autoStartIfNeeded() }
             default: break
             }
         }
         // 잠금화면 카드 탭(livelyrics://open-spotify) → Spotify 열기 (작업 009·010)
+        // Spotify 앱 승인 후 돌아옴(livelyrics://callback) → SDK 세션 (작업 025 검토 2차)
         .onOpenURL { controller.handleOpenURL($0) }
     }
 
@@ -138,8 +142,10 @@ private struct DeveloperMenuView: View {
 
 private struct SpotifySection: View {
     @ObservedObject var auth: SpotifyAuth
+    @ObservedObject var remote: SpotifyRemote
     let onLogin: () -> Void
     let onLogout: () -> Void
+    let onAuthorizeRemote: () -> Void
 
     var body: some View {
         Section("Spotify") {
@@ -150,6 +156,12 @@ private struct SpotifySection: View {
             case .login(let enabled):
                 Button("Spotify로 로그인", action: onLogin)
                     .disabled(!enabled)
+            }
+            // Spotify 앱 승인(SDK 연결용)이 필요할 때만 보임 (작업 025 검토 2차)
+            if RemoteAuthPlan.showsAuthorizeButton(loggedIn: auth.isLoggedIn, action: remote.authAction) {
+                Button("Spotify 앱 연결", action: onAuthorizeRemote)
+                Text("곡 변경·일시정지를 더 빨리 알아채려면 Spotify 앱에서 한 번 승인해 주세요. 음악은 재생되지 않아요.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
     }

@@ -11,8 +11,8 @@ Spotify에서 재생 중인 곡의 **싱크 가사를 아이폰 잠금화면(Liv
 ## WHAT — 스택과 코드 지도
 
 - Swift / SwiftUI / ActivityKit(Live Activity) / WidgetKit / CoreLocation, **최소 iOS 16.4**
-- 외부: Spotify Web API (PKCE 로그인, 개발자 모드) · LRCLIB (가사 조회 전용)
-- 서버·패키지 매니저 없음. 가사·토큰은 기기 안에만 보관
+- 외부: Spotify Web API (PKCE 로그인, 개발자 모드) · Spotify iOS SDK (SPM, 보조 출처, 025) · LRCLIB (가사 조회 전용)
+- 서버 없음. 외부 패키지는 SpotifyiOS(SPM) 하나. 가사·토큰은 기기 안에만 보관
 
 **앱 타깃 `LiveLyricsExperiment`**
 | 파일 | 하는 일 |
@@ -26,7 +26,8 @@ Spotify에서 재생 중인 곡의 **싱크 가사를 아이폰 잠금화면(Liv
 | `Spotify/SpotifyConfig.swift` | Client ID, Redirect URI `livelyrics://callback`, scopes |
 | `Spotify/SpotifyAuth.swift` | PKCE 로그인, 토큰 갱신, 키체인(`AfterFirstUnlock`) 저장 |
 | `Spotify/SpotifyAPI.swift` | currently-playing 조회, 401 재시도, 429 Retry-After |
-| `Spotify/NowPlayingService.swift` | 폴링(재생 중 3초·일시정지 15초·곡 없음 10초), 곡 변경·일시정지·seek 감지, 위치 추정 |
+| `Spotify/NowPlayingService.swift` | 폴링(재생 중 3초·일시정지 15초·곡 없음 10초, SDK 연결 중 15·30초), 곡 변경·일시정지·seek 감지, 위치 추정, SDK 이벤트 반영 |
+| `Spotify/SpotifyRemote.swift` | Spotify iOS SDK(App Remote) **유일한 창구**: [Spotify 앱 연결] 승인 세션(키체인), 플레이어 상태 구독 — 감지 전용 (025) |
 
 **위젯 확장 타깃 `LyricsWidgetExtension`**
 | 파일 | 하는 일 |
