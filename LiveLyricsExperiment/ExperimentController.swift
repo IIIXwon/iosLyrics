@@ -12,6 +12,13 @@ import Foundation
 import SwiftUI
 import UIKit
 
+private extension LyricsActivityAttributes.ContentState {
+    /// 카드 갱신 판단용 비교 값 (판단은 `Logic/CardPlan`)
+    var snapshot: CardSnapshot {
+        CardSnapshot(previous: previous, current: current, next: next, isPlaying: isPlaying, countdown: countdown)
+    }
+}
+
 @MainActor
 final class ExperimentController: ObservableObject {
     @Published private(set) var isRunning = false
@@ -23,8 +30,8 @@ final class ExperimentController: ObservableObject {
             UserDefaults.standard.set(syncOffset, forKey: "syncOffset")
             guard syncOffset != oldValue, isRunning, let np = nowPlaying.current else { return }
             let state = makeState(np)
-            if let reason = updateReason(new: state, key: np.key) {
-                sendCard(state, key: np.key, reason: "\(reason) (싱크 보정 \(String(format: "%+.2f", syncOffset))초)")
+            if let reason = cardReason(new: state, key: np.key) {
+                sendCard(state, key: np.key, reason: reason, syncOffset: syncOffset)
             }
             // 보정값이 바뀌면 다음 줄·카운트다운 예약 시각도 달라지므로 새로 잡음 (작업 020 리뷰 1차)
             scheduleNextLine()
@@ -39,21 +46,15 @@ final class ExperimentController: ObservableObject {
     // Spotify iOS SDK — 보조 출처 (작업 025). 연결돼 있으면 이벤트로 바로 반영, 끊기면 3초 폴링 그대로
     // 로그인·토큰도 여기서 (작업 032): 승인 세션 하나를 SDK 연결과 Web API 폴링에 함께 씀
     let remote: SpotifyRemote
-    private var remoteLastAttempt: TimeInterval?   // 마지막 연결 시도 시각 (기기 가동 시간 기준)
-    private var remoteLastFailure: String?          // 마지막 실패 키(domain+code). 같은 키의 실패 로그를 연속으로 남기지 않으려고
-    private var remoteAttemptCount = 0               // SDK 연결 시도 번호 (진단 로그용, 025 검토 1차). 추적 세션마다 0부터
-    private var remoteAuthWarned = false             // "Spotify 앱 연결 필요" 안내를 이번 세션에 이미 남겼는지 (검토 2차)
-    private var remoteAttemptAppState: String?       // 마지막 연결 시도 때의 앱 상태 (실패 줄에 씀 — 실패 시점 상태와 혼동 방지)
-    private var remoteLastOutcome: String?           // 직전 시도 결과: "성공" 또는 실패 키 (백그라운드 시도 줄을 남길지 판단용)
-    private var remoteBackgroundLogged = false       // 이번 세션에 백그라운드 시도 줄을 남긴 적 있는지
-    private var remoteOutcomeAtBackgroundLog: String? // 마지막으로 백그라운드 시도 줄을 남길 때의 직전 결과
-    private var remoteAttemptLogged = false          // 마지막 연결 시도 줄을 남겼는지 (앱 화면 시도는 항상 true. 백그라운드 반복 실패 줄 생략 판단)
-    private var remoteConnectAfterAttempt = false    // 승인이 끝났는데 이전 연결 시도가 진행 중 → 그 시도가 실패하면 새 세션으로 다시 연결 (029 리뷰 수용 A)
+    /// SDK 연결 시도·실패 진단 기록 (판단은 `Logic/RemoteLog`, 034). 추적 세션마다 새로 시작
+    private var remoteLog = RemoteConnectLog()
+
+    private typealias ContentState = LyricsActivityAttributes.ContentState
 
     private var activity: Activity<LyricsActivityAttributes>?
     private var activityUpdates = 0
     private var skippedUpdates = 0
-    private var lastSent: LyricsActivityAttributes.ContentState?
+    private var lastSent: ContentState?
     private var lastSentKey: String?
 
     // 카드 상태 로그 (작업 019, 023 지연 측정에 씀)
@@ -162,20 +163,6 @@ final class ExperimentController: ObservableObject {
         readiness.refresh()
     }
 
-    /// SDK 연결 진단 상태 초기화 (정지 때, 031 리뷰 R4). SDK 연결 자체는 건드리지 않음
-    private func resetRemoteDiagnostics() {
-        remoteLastAttempt = nil
-        remoteLastFailure = nil
-        remoteAttemptCount = 0
-        remoteAuthWarned = false
-        remoteAttemptAppState = nil
-        remoteLastOutcome = nil
-        remoteBackgroundLogged = false
-        remoteOutcomeAtBackgroundLog = nil
-        remoteAttemptLogged = false
-        remoteConnectAfterAttempt = false
-    }
-
     /// 백그라운드 없이 한 번만 조회 (연결 확인용)
     func checkOnce() {
         nowPlaying.start()
@@ -273,7 +260,7 @@ final class ExperimentController: ObservableObject {
         Task { await ending?.end(nil, dismissalPolicy: .immediate) }
         location.stop()
         remote.disconnect()
-        resetRemoteDiagnostics()
+        remoteLog = RemoteConnectLog()   // 진단 기록 초기화 (031 리뷰 R4). SDK 연결 자체는 건드리지 않음
         isRunning = false
         log("⏹ 정지 (조회 \(nowPlaying.pollCount)회, 카드 갱신 \(activityUpdates)회, 갱신 생략 \(skippedUpdates)회)")
     }
@@ -316,7 +303,7 @@ final class ExperimentController: ObservableObject {
 
         // 남아 있는 카드가 있으면 이어받고, 없으면 새로 시작
         let (keep, others) = Self.pickActivityToAdopt()
-        if !others.isEmpty { Task { for old in others { await old.end(nil, dismissalPolicy: .immediate) } } }
+        endActivities(others)
         let started = beginTracking(adopting: keep)
         log(started
             ? "⚡️ 단축어 결과: 추적 시작됨 (\(keep != nil ? "기존 카드 이어받음" : "새 카드")) — 앱 상태: \(appStateName())"
@@ -324,13 +311,24 @@ final class ExperimentController: ObservableObject {
         guard started else { return }
 
         // 백그라운드에서 위치 추적이 실제로 켜졌는지 5초 뒤 확인
+        logLocationReceiptAfter5s(
+            success: { "⚡️ 단축어 실험: 위치 추적 켜짐 — 위치 수신 \($0)회" },
+            failure: { "⚡️ 단축어 실험: 5초 동안 위치 수신 0회 — 백그라운드에서 시작이 막혔을 수 있어요 (권한 \($0))" })
+    }
+
+    /// 5초 뒤 위치 수신 여부를 로그로 남김. 수신 횟수·권한 문구는 5초 뒤 값을 읽음 (그래서 문구를 클로저로 받음)
+    private func logLocationReceiptAfter5s(success: @escaping (Int) -> String, failure: @escaping (String) -> String) {
         Task {
             try? await Task.sleep(nanoseconds: 5_000_000_000)
             let count = location.receivedCount
-            log(count > 0
-                ? "⚡️ 단축어 실험: 위치 추적 켜짐 — 위치 수신 \(count)회"
-                : "⚡️ 단축어 실험: 5초 동안 위치 수신 0회 — 백그라운드에서 시작이 막혔을 수 있어요 (권한 \(location.authorizationText))")
+            log(count > 0 ? success(count) : failure(location.authorizationText))
         }
+    }
+
+    /// 카드들을 모두 종료 (비어 있으면 아무것도 안 함)
+    private func endActivities(_ activities: [Activity<LyricsActivityAttributes>]) {
+        guard !activities.isEmpty else { return }
+        Task { for old in activities { await old.end(nil, dismissalPolicy: .immediate) } }
     }
 
     /// 남아 있는 카드 중 이어받을 것 1개(가장 최근 것 = 목록의 마지막 활성 카드)와 종료할 나머지
@@ -348,11 +346,11 @@ final class ExperimentController: ObservableObject {
         guard total > 0 else { return }
 
         guard let keep, remote.isLoggedIn, !userStopped else {
-            Task { for old in Activity<LyricsActivityAttributes>.activities { await old.end(nil, dismissalPolicy: .immediate) } }
+            endActivities(Activity<LyricsActivityAttributes>.activities)
             log("🧹 남은 카드 \(total)개 종료 (\(remote.isLoggedIn ? "사용자가 정지해 둠" : "로그인 안 됨"))")
             return
         }
-        if !others.isEmpty { Task { for old in others { await old.end(nil, dismissalPolicy: .immediate) } } }
+        endActivities(others)
         log("♻️ 기존 카드 이어받음 (\(total)개 중 1개, 나머지 종료)")
         beginTracking(adopting: keep)
     }
@@ -363,7 +361,7 @@ final class ExperimentController: ObservableObject {
         // 조회 사이가 너무 벌어졌다면 앱이 중단됐다가 깨어난 것 (위치 추적을 끈 뒤 실제로 중단되는지 확인용)
         let now = Date()
         if let last = lastPollAt, now.timeIntervalSince(last) > 40 {   // 일시정지 중 정상 간격이 15초라 여유를 둠
-            log("💓 조회 재개 — \(Self.durationText(now.timeIntervalSince(last))) 만에 · \(appStateName()) · 위치 \(location.isRunning ? "ON" : "OFF")")
+            log("💓 조회 재개 — \(RemoteLogText.duration(now.timeIntervalSince(last))) 만에 · \(appStateName()) · 위치 \(location.isRunning ? "ON" : "OFF")")
         }
         lastPollAt = now
 
@@ -391,7 +389,7 @@ final class ExperimentController: ObservableObject {
         }
 
         let state = makeState(np)
-        if let reason = updateReason(new: state, key: np?.key) {
+        if let reason = cardReason(new: state, key: np?.key) {
             sendCard(state, key: np?.key, reason: reason)
         } else {
             skippedUpdates += 1   // 바뀐 게 없으면 카드를 건드리지 않음
@@ -451,7 +449,7 @@ final class ExperimentController: ObservableObject {
         }
         guard activity != nil else { return }
         // 카드부터 갱신하고, 끝난 뒤에 위치 추적을 끔
-        let sent = sendCard(makeState(nowPlaying.current), key: nowPlaying.current?.key, reason: "한도 차단 안내")
+        let sent = sendCard(makeState(nowPlaying.current), key: nowPlaying.current?.key, reason: .quotaNotice)
         guard firstTime, location.isRunning else { return }
         Task {
             await sent?.value
@@ -482,7 +480,7 @@ final class ExperimentController: ObservableObject {
         state.current = IdleNotice.current
         state.next = IdleNotice.next
         idleNoticeShown = true
-        await sendCard(state, key: nowPlaying.current?.key, reason: "위치 추적 끄기 직전 안내")?.value
+        await sendCard(state, key: nowPlaying.current?.key, reason: .idleNotice)?.value
     }
 
     // MARK: - 카드 탭 → Spotify 열기 (작업 009, 026: 재생 제어 없음) / SDK가 끊겼으면 승인 왕복으로 다시 연결 (작업 029)
@@ -498,13 +496,9 @@ final class ExperimentController: ObservableObject {
             return
         }
         log("📍 위치 추적 재시작 요청 (앱 상태: \(appStateName()), 권한: \(location.authorizationText)) — 5초 뒤 수신 여부 확인")
-        Task {
-            try? await Task.sleep(nanoseconds: 5_000_000_000)
-            let count = location.receivedCount
-            log(count > 0
-                ? "✅ 위치 추적 재시작 성공 — 위치 수신 \(count)회"
-                : "❌ 위치 추적 재시작 후 5초 동안 위치 수신 0회 — 백그라운드에서 시작이 막혔을 수 있어요 (권한 \(location.authorizationText))")
-        }
+        logLocationReceiptAfter5s(
+            success: { "✅ 위치 추적 재시작 성공 — 위치 수신 \($0)회" },
+            failure: { "❌ 위치 추적 재시작 후 5초 동안 위치 수신 0회 — 백그라운드에서 시작이 막혔을 수 있어요 (권한 \($0))" })
     }
 
     /// 앱 주소(livelyrics://…)로 앱이 열렸을 때. open-spotify = 잠금화면 카드 탭, callback = Spotify 앱 승인(로그인 포함, 작업 032) 후 돌아옴(작업 025 검토 2차)
@@ -530,7 +524,7 @@ final class ExperimentController: ObservableObject {
     private func openSpotify() {
         resumeAfterQuotaBlockIfExpired()   // 앱이 멈춘 사이 한도 차단이 끝났으면 안내를 걷고 조회 재개 (아래 조건 판단 전에)
         guard let url = URL(string: "spotify:"), UIApplication.shared.canOpenURL(url) else {
-            log("🔗 카드 탭 → Spotify 열기 (재생은 Spotify에서 직접)")
+            logCardTapOpen()
             log("⚠️ Spotify 앱을 열 수 없어요 (설치돼 있지 않음)")
             return
         }
@@ -555,7 +549,7 @@ final class ExperimentController: ObservableObject {
             // 세션 갱신 중 등으로 승인 왕복을 시작하지 못함 (authorize()의 기존 로그는 그대로) → Spotify만 열기 (029 리뷰 수용 B)
             log("🔗 카드 탭 → SDK 세션 갱신 중이라 재연결은 건너뜀 — Spotify 열기 (재생은 Spotify에서 직접)")
         } else {
-            log("🔗 카드 탭 → Spotify 열기 (재생은 Spotify에서 직접)")
+            logCardTapOpen()
         }
         UIApplication.shared.open(url)
     }
@@ -594,7 +588,7 @@ final class ExperimentController: ObservableObject {
         // 저장해 둔 싱크 가사는 바로 적용 → 호출한 didUpdate의 첫 갱신("곡 변경")에 가사가 같이 들어감 (작업 021)
         if let saved = LyricsStore.loadSynced(title: np.title, artist: np.artist) {
             apply(saved, for: np, save: false)
-            log("💾 저장된 싱크 가사 사용 (\(saved.lines.count)줄)")
+            logSavedSyncedUsed(saved)
             lyricsSettled(key)
             return
         }
@@ -615,7 +609,7 @@ final class ExperimentController: ObservableObject {
             if pending != nil, let saved = LyricsStore.loadSynced(title: np.title, artist: np.artist) {
                 // 기다린 미리 받기가 방금 싱크 가사를 저장했으면 인터넷 조회 없이 사용 (기다리지 않았으면 위에서 이미 확인함)
                 result = saved
-                log("💾 저장된 싱크 가사 사용 (\(saved.lines.count)줄)")
+                logSavedSyncedUsed(saved)
             } else if let skipped = resultFromSearchRecord(for: np) {
                 // 최근에 이미 검색했다면(간격 안) 인터넷 조회를 건너뜀
                 result = skipped
@@ -636,14 +630,7 @@ final class ExperimentController: ObservableObject {
 
             // 가사가 도착하면 바로 카드에 반영
             if let current = nowPlaying.current, current.key == key {
-                let reason: String
-                switch lyricsKind {
-                case .synced: reason = "가사 도착"
-                case .plain: reason = "싱크 가사 없음 (일반 가사만)"
-                case .instrumental: reason = "연주곡"
-                case .none: reason = "가사 없음"
-                }
-                sendCard(makeState(current), key: key, reason: reason)
+                sendCard(makeState(current), key: key, reason: .lyrics(lyricsKind))
                 scheduleNextLine()
             }
             lyricsSettled(key)
@@ -754,11 +741,11 @@ final class ExperimentController: ObservableObject {
         guard let record = LyricsStore.searchRecord(title: title, artist: artist) else { return nil }
         let day: TimeInterval = 24 * 3600
         switch record.result {
-        case "plain":
+        case SearchRecord.plainResult:
             // 저장해 둔 일반 가사 파일이 있을 때만 건너뜀
             guard record.isFresh(within: day), let saved = LyricsStore.loadPlain(title: title, artist: artist) else { return nil }
             return (saved, "일반 가사만 기록 (\(record.agoText))")
-        case "none":
+        case SearchRecord.noneResult:
             guard record.isFresh(within: day) else { return nil }
             return (LyricsResult(kind: .none), "못 찾음 기록 (\(record.agoText))")
         default:
@@ -845,8 +832,8 @@ final class ExperimentController: ObservableObject {
             try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
             guard !Task.isCancelled, let np = nowPlaying.current else { return }
             let state = makeState(np)
-            if lastSent.map({ linesChanged($0, state) }) ?? true {
-                sendCard(state, key: np.key, reason: "가사 줄 변경")
+            if lastSent.map({ CardPlan.linesChanged(old: $0.snapshot, new: state.snapshot) }) ?? true {
+                sendCard(state, key: np.key, reason: .lineChanged)
             }
             scheduleNextLine()
         }
@@ -855,13 +842,14 @@ final class ExperimentController: ObservableObject {
     /// 카드에 실제로 반영하고 로그를 남김
     /// 갱신이 끝날 때까지 기다려야 하면(예: 위치 추적을 끄기 직전) 돌려준 Task의 value를 await
     @discardableResult
-    private func sendCard(_ state: LyricsActivityAttributes.ContentState, key: String?, reason: String) -> Task<Void, Never>? {
+    /// syncOffset은 싱크 보정으로 갱신할 때만 넘김 (그때는 가사 줄 변경도 기록함)
+    private func sendCard(_ state: ContentState, key: String?, reason: CardUpdateReason, syncOffset: Double? = nil) -> Task<Void, Never>? {
         guard let activity else { return nil }
         activityUpdates += 1
         lastSent = state
         lastSentKey = key
         // 가사 줄 변경은 줄마다 쌓이기만 해서 기록하지 않음 (횟수는 계속 셈, 작업 010)
-        if reason != "가사 줄 변경" { log("🪪 카드 갱신 #\(activityUpdates) — \(reason)") }
+        if let line = CardPlan.logLine(count: activityUpdates, reason: reason, syncOffset: syncOffset) { log(line) }
         let content = ActivityContent(state: state, staleDate: nil)
         return Task { await activity.update(content) }
     }
@@ -878,56 +866,22 @@ final class ExperimentController: ObservableObject {
         }
     }
 
-    /// 이전·현재·다음 줄 중 하나라도 달라졌는지 (같은 줄이 반복돼도 이전·다음 줄이 바뀌면 갱신)
-    /// 카운트다운 숫자(3·2·1)가 바뀌어도 갱신 (작업 020)
-    private func linesChanged(_ old: LyricsActivityAttributes.ContentState, _ new: LyricsActivityAttributes.ContentState) -> Bool {
-        textChanged(old, new) || old.countdown != new.countdown
+    /// 지금 카드(lastSent)와 비교해 갱신해야 하는 이유. 필요 없으면 nil
+    private func cardReason(new: ContentState, key: String?) -> CardUpdateReason? {
+        CardPlan.reason(old: lastSent?.snapshot, new: new.snapshot, trackChanged: key != lastSentKey)
     }
 
-    /// 이전·현재·다음 줄 글자만 비교
-    private func textChanged(_ old: LyricsActivityAttributes.ContentState, _ new: LyricsActivityAttributes.ContentState) -> Bool {
-        old.previous != new.previous || old.current != new.current || old.next != new.next
-    }
-
-    /// 카드를 갱신해야 하는 이유. 필요 없으면 nil
-    private func updateReason(new: LyricsActivityAttributes.ContentState, key: String?) -> String? {
-        guard let old = lastSent else { return "처음" }
-        if key != lastSentKey { return "곡 변경" }
-        if textChanged(old, new) { return "표시 내용 변경" }
-        if old.isPlaying != new.isPlaying { return new.isPlaying ? "재생" : "일시정지" }
-        // 숫자만 바뀐 건 줄 변경 예약과 같은 이유로 보내 로그를 늘리지 않음 (작업 020)
-        if old.countdown != new.countdown { return "가사 줄 변경" }
-        // 카드에 시간·진행 막대가 없으므로 시간 보정·일시정지 위치 이동은 보이지 않는 변화 → 갱신하지 않음 (작업 013)
-        return nil
-    }
-
-    private func makeState(_ np: NowPlaying?) -> LyricsActivityAttributes.ContentState {
+    private func makeState(_ np: NowPlaying?) -> ContentState {
         guard let np else {
-            var empty = ContentState(previous: "", current: nowPlaying.status, next: "Spotify에서 음악을 재생하세요")
+            let t = CardText.noTrack(status: nowPlaying.status)
+            var empty = ContentState(previous: t.previous, current: t.current, next: t.next)
             applyQuotaNotice(&empty)
             return empty
         }
-        // 싱크 보정을 더한 위치 (곡 길이를 넘거나 0 미만이 되지 않게)
-        let position = min(np.duration, max(0, np.position() + syncOffset))
+        let position = CardPlan.position(np.position(), offset: syncOffset, duration: np.duration)
         let start = Date().addingTimeInterval(-position)   // 곡의 0초 지점 = 지금 - 재생 위치
-        // 가사 종류별 카드 내용
-        //   싱크 가사   : 이전/현재/다음 줄
-        //   일반 가사만 : "싱크 가사가 없어요" 안내 (일반 가사는 저장만 함)
-        //   연주곡      : 🎼 연주곡
-        //   못 찾음     : 아티스트/제목/앨범
-        let info = "\(np.title) · \(np.artist)"
-        let text: (previous: String, current: String, next: String, trackInfo: String)
-        switch lyricsKind {
-        case .synced:
-            let lines = LRCParser.context(lyrics, at: position)
-            text = (lines.previous, lines.current, lines.next, info)
-        case .plain:
-            text = ("", "싱크 가사가 없어요", "일반 가사만 있어서 저장해 뒀어요", info)
-        case .instrumental:
-            text = ("", "🎼 연주곡", "", info)
-        case .none:
-            text = (np.artist, np.title, np.album, "")
-        }
+        let text = CardText.make(kind: lyricsKind, lines: lyrics, position: position,
+                                 title: np.title, artist: np.artist, album: np.album)
         var state = ContentState(
             previous: text.previous,
             current: text.current,
@@ -940,14 +894,10 @@ final class ExperimentController: ObservableObject {
             duration: np.duration
         )
         // 전주·간주 끝 3초의 3·2·1 (작업 020). 일시정지 중이면 0
-        if lyricsKind == .synced, np.isPlaying {
-            state.countdown = LyricCountdown.value(lyrics, at: position)
-        }
+        state.countdown = CardPlan.countdown(kind: lyricsKind, isPlaying: np.isPlaying, lines: lyrics, position: position)
         applyQuotaNotice(&state)
         return state
     }
-
-    private typealias ContentState = LyricsActivityAttributes.ContentState
 
     /// 한도 차단 중이면 카드를 "마지막 곡 일시정지 + 안내 문구"로 덮어씀 (어떤 경로로 카드를 갱신해도 안내가 유지되게)
     private func applyQuotaNotice(_ state: inout ContentState) {
@@ -957,12 +907,6 @@ final class ExperimentController: ObservableObject {
         state.next = ""
         state.isPlaying = false
         state.countdown = 0   // 안내 중에는 숫자 숨김 (작업 020)
-    }
-
-    /// 295초 → "4분 55초", 42초 → "42초"
-    private static func durationText(_ seconds: TimeInterval) -> String {
-        let total = Int(seconds.rounded())
-        return total >= 60 ? "\(total / 60)분 \(total % 60)초" : "\(total)초"
     }
 
     private func appStateName() -> String {
@@ -998,9 +942,9 @@ final class ExperimentController: ObservableObject {
             log("✅ Spotify 로그인 성공")
             readiness.refresh()
         }
-        remoteAuthWarned = false
+        remoteLog.authorized()
         if remote.isConnecting {
-            remoteConnectAfterAttempt = true
+            remoteLog.connectAfterAttempt = true
             log("⚡ 이전 연결 시도가 끝나면 새 세션으로 다시 연결")
             return
         }
@@ -1014,7 +958,7 @@ final class ExperimentController: ObservableObject {
     private func tryRemoteConnect(foreground: Bool) -> Bool {
         guard isRunning, remote.isLoggedIn, !remote.isConnected, !remote.isConnecting else { return false }
         let now = ProcessInfo.processInfo.systemUptime
-        guard RemoteRetry.shouldTry(now: now, lastAttempt: remoteLastAttempt, foreground: foreground) else { return false }
+        guard RemoteRetry.shouldTry(now: now, lastAttempt: remoteLog.lastAttempt, foreground: foreground) else { return false }
         let attemptState = appStateName()
         switch remote.connect() {
         case .busy:
@@ -1023,66 +967,34 @@ final class ExperimentController: ObservableObject {
             // 승인(로그인·재승인) 결과를 기다리는 중 (돌아온 직후 화면 복귀가 세션보다 먼저 옴) → 안내·시도 기록 안 함
             break
         case .needAuthorize:
-            remoteLastAttempt = now   // 승인이 없어 막혀도 다음 백그라운드 확인은 60초 뒤
-            // 승인 세션이 없거나 갱신할 수 없으면 연결해도 실패하므로 시도하지 않음 (안내는 세션당 1번)
-            if !remoteAuthWarned {
-                remoteAuthWarned = true
-                if remote.hasSession {
-                    // 한 번 승인함 → 카드 탭 때 승인 왕복으로 자동 재승인 (작업 030)
-                    log("⚡ SDK 세션 만료·갱신 불가 — 잠금화면 카드를 탭하면 Spotify를 잠깐 거쳐 자동으로 다시 승인해요 (앱의 [Spotify 다시 연결]도 가능)")
-                } else {
-                    log("⚡ Spotify 로그인 필요 — 앱에서 [Spotify로 로그인]을 눌러 주세요")
-                }
+            // 승인 세션이 없거나 갱신할 수 없으면 연결해도 실패하므로 시도하지 않음 (안내는 세션당 1번, 다음 백그라운드 확인은 60초 뒤)
+            if remoteLog.needAuthorize(now: now) {
+                log(RemoteLogText.needAuthorize(hasSession: remote.hasSession))
             }
         case .started:
-            remoteLastAttempt = now
-            remoteAuthWarned = false
-            remoteAttemptCount += 1
-            remoteAttemptAppState = attemptState
-            // 앱 화면 시도는 항상, 백그라운드 시도는 세션 첫 번째이거나 직전 결과가 바뀌었을 때만 줄을 남김
-            remoteAttemptLogged = foreground || !remoteBackgroundLogged || remoteLastOutcome != remoteOutcomeAtBackgroundLog
-            if remoteAttemptLogged {
-                if !foreground {
-                    remoteBackgroundLogged = true
-                    remoteOutcomeAtBackgroundLog = remoteLastOutcome
-                }
-                log("⚡ SDK 연결 시도 #\(remoteAttemptCount) (\(attemptState)) — \(remoteDiagnostics())")
+            if remoteLog.attemptStarted(now: now, foreground: foreground, appState: attemptState) {
+                log("⚡ SDK 연결 시도 #\(remoteLog.attemptCount) (\(attemptState)) — \(remoteDiagnostics())")
             }
         }
         return true
     }
 
-    /// SDK 승인 세션의 남은 시간 한 줄. ⚠️ 세션·토큰 값은 넣지 않음 (있음/없음·남은 시간만)
-    private func remoteSessionText() -> String {
-        guard remote.hasSession, let seconds = remote.sessionRemaining else { return "세션 없음" }
-        if seconds <= 0 { return "세션 있음, 만료됨(연결 전 갱신)" }
-        if seconds <= RemoteAuthPlan.renewMargin { return "세션 있음, 남은 유효 곧 만료(연결 전 갱신)" }
-        return "세션 있음, 남은 유효 \(Int(seconds / 60))분"
-    }
-
     /// 연결 시도 줄의 진단 정보. ⚠️ 토큰·세션 값은 절대 넣지 않음 (있음/없음·남은 시간만)
     private func remoteDiagnostics() -> String {
-        let playback: String
-        if let np = nowPlaying.current {
-            playback = np.isPlaying ? "재생 중" : "일시정지"
-        } else {
-            playback = "없음"
-        }
-        return "\(remoteSessionText()), Web API 재생 상태 \(playback)"
+        "\(sessionLine), Web API 재생 상태 \(RemoteLogText.playback(isPlaying: nowPlaying.current?.isPlaying))"
+    }
+
+    private var sessionLine: String {
+        RemoteLogText.session(hasSession: remote.hasSession, remaining: remote.sessionRemaining)
     }
 
     private func remoteConnectionChanged(_ connected: Bool) {
         nowPlaying.remoteConnected = connected
         if connected {
-            remoteConnectAfterAttempt = false   // 이전 시도가 성공했으면 다시 연결할 필요 없음
-            remoteLastFailure = nil
-            remoteLastOutcome = "성공"
-            log("⚡ SDK 연결됨 — 폴링 완화(재생 중 \(Int(PollTiming.connectedPlaying))초) · \(remoteSessionText())")
-        } else if remote.lastDisconnectByUser {
-            // 우리가 끊은 경우. 정지·강제 종료·로그아웃은 폴링도 함께 멈추므로 "3초 폴링 복귀"가 아님
-            log("⚡ SDK 연결 끊음 (\(remote.lastError ?? "정지"))")
+            remoteLog.connected()
+            log("⚡ SDK 연결됨 — 폴링 완화(재생 중 \(Int(PollTiming.connectedPlaying))초) · \(sessionLine)")
         } else {
-            log("⚡ SDK 연결 끊김 — 3초 폴링 복귀 (\(remote.lastError ?? "이유 없음"))")
+            log(RemoteLogText.disconnected(byUser: remote.lastDisconnectByUser, error: remote.lastError))
         }
     }
 
@@ -1092,24 +1004,31 @@ final class ExperimentController: ObservableObject {
     /// 승인 왕복 중에 끝난 이전 시도(옛 세션)였으면 실패 줄을 남긴 뒤 새 세션으로 1번 다시 연결 (029 리뷰 수용 A, 시간 초과 포함)
     private func remoteConnectFailed(_ reason: String, key: String) {
         defer {
-            if remoteConnectAfterAttempt {
-                remoteConnectAfterAttempt = false
+            if remoteLog.connectAfterAttempt {
+                remoteLog.connectAfterAttempt = false
                 tryRemoteConnect(foreground: true)
             }
         }
-        remoteLastOutcome = key
-        let state = remoteAttemptAppState ?? appStateName()
-        if key == remoteLastFailure {
-            if remoteAttemptLogged {
-                log("⚡ SDK 연결 실패 #\(remoteAttemptCount): 같은 오류 반복 (\(key)) (\(state))")
-            }
-            return
+        let state = remoteLog.attemptAppState ?? appStateName()
+        switch remoteLog.failed(key: key) {
+        case .repeated:
+            log("⚡ SDK 연결 실패 #\(remoteLog.attemptCount): 같은 오류 반복 (\(key)) (\(state))")
+        case .silent:
+            break
+        case .detail:
+            log("⚡ SDK 연결 실패 #\(remoteLog.attemptCount): \(reason) (\(state)) · \(sessionLine)")
         }
-        remoteLastFailure = key
-        log("⚡ SDK 연결 실패 #\(remoteAttemptCount): \(reason) (\(state)) · \(remoteSessionText())")
     }
 
     // MARK: - 로그
+
+    private func logCardTapOpen() {
+        log("🔗 카드 탭 → Spotify 열기 (재생은 Spotify에서 직접)")
+    }
+
+    private func logSavedSyncedUsed(_ saved: LyricsResult) {
+        log("💾 저장된 싱크 가사 사용 (\(saved.lines.count)줄)")
+    }
 
     func log(_ message: String) {
         let time = Date().formatted(date: .omitted, time: .standard)
@@ -1121,5 +1040,3 @@ final class ExperimentController: ObservableObject {
 
     var logText: String { logs.reversed().joined(separator: "\n") }
 }
-
-// LogLimit(로그 보관 줄 수)은 Logic/LogLimit.swift로 옮김 (작업 024)
