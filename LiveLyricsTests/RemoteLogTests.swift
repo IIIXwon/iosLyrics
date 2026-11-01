@@ -286,7 +286,7 @@ struct RemoteLogTests {
     }
 
     // 58
-    @Test func 시간문구_분초와초와반올림() {
+    @Test func 시간문구_초수별_분초또는초로반올림() {
         // given // when // then
         #expect(RemoteLogText.duration(295) == "4분 55초")
         #expect(RemoteLogText.duration(42) == "42초")

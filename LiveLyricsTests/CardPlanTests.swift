@@ -156,7 +156,7 @@ struct CardPlanTests {
     }
 
     // 20
-    @Test func 위치계산_보정을더한다() {
+    @Test func 위치계산_범위안이면_보정을더한다() {
         // given // when // then
         #expect(CardPlan.position(10, offset: 0.25, duration: 100) == 10.25)
     }

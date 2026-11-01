@@ -260,7 +260,7 @@ final class ExperimentController: ObservableObject {
         Task { await ending?.end(nil, dismissalPolicy: .immediate) }
         location.stop()
         remote.disconnect()
-        remoteLog = RemoteConnectLog()   // 진단 기록 초기화 (031 리뷰 R4). SDK 연결 자체는 건드리지 않음
+        remoteLog = RemoteConnectLog()   // 진단 기록만 초기화 (031 리뷰 R4)
         isRunning = false
         log("⏹ 정지 (조회 \(nowPlaying.pollCount)회, 카드 갱신 \(activityUpdates)회, 갱신 생략 \(skippedUpdates)회)")
     }
@@ -728,7 +728,7 @@ final class ExperimentController: ObservableObject {
         log("⏭ 다음 곡 가사 미리 받음: \(next.artist) - \(next.title) (\(found))")
     }
 
-    /// 재검색 간격 (작업 005): 일반 가사만·못 찾음은 24시간, LRCLIB이 연주곡이라고 한 곡은 30일 안에는 다시 검색하지 않음
+    /// 재검색 간격 (작업 005): 일반 가사만·못 찾음은 24시간 안에 다시 검색하지 않음. 연주곡 기록은 믿지 않고 다시 검색함
     /// 싱크 가사는 저장본을 쓰므로 여기서 다루지 않음. 간격이 지났거나 기록이 없으면 nil (= 검색해야 함)
     private func resultFromSearchRecord(for np: NowPlaying) -> LyricsResult? {
         guard let found = freshSearchRecord(title: np.title, artist: np.artist) else { return nil }
@@ -822,7 +822,7 @@ final class ExperimentController: ObservableObject {
     private func scheduleNextLine() {
         lineTask?.cancel()
         guard activity != nil, quotaNoticeText == nil, !lyrics.isEmpty, let np = nowPlaying.current, np.isPlaying else { return }
-        let position = min(np.duration, max(0, np.position() + syncOffset))
+        let position = CardPlan.position(np.position(), offset: syncOffset, duration: np.duration)
         // 다음 줄 시각과 카운트다운 숫자가 바뀌는 시각(작업 020) 중 먼저 오는 쪽에 깨어남
         let lineTime = LRCParser.context(lyrics, at: position).nextTime
         let countdownTime = LyricCountdown.nextChange(lyrics, at: position)   // lyrics는 싱크 가사일 때만 채워짐
@@ -841,15 +841,15 @@ final class ExperimentController: ObservableObject {
 
     /// 카드에 실제로 반영하고 로그를 남김
     /// 갱신이 끝날 때까지 기다려야 하면(예: 위치 추적을 끄기 직전) 돌려준 Task의 value를 await
-    @discardableResult
     /// syncOffset은 싱크 보정으로 갱신할 때만 넘김 (그때는 가사 줄 변경도 기록함)
-    private func sendCard(_ state: ContentState, key: String?, reason: CardUpdateReason, syncOffset: Double? = nil) -> Task<Void, Never>? {
+    @discardableResult
+    private func sendCard(_ state: ContentState, key: String?, reason: CardUpdateReason, syncOffset logOffset: Double? = nil) -> Task<Void, Never>? {
         guard let activity else { return nil }
         activityUpdates += 1
         lastSent = state
         lastSentKey = key
         // 가사 줄 변경은 줄마다 쌓이기만 해서 기록하지 않음 (횟수는 계속 셈, 작업 010)
-        if let line = CardPlan.logLine(count: activityUpdates, reason: reason, syncOffset: syncOffset) { log(line) }
+        if let line = CardPlan.logLine(count: activityUpdates, reason: reason, syncOffset: logOffset) { log(line) }
         let content = ActivityContent(state: state, staleDate: nil)
         return Task { await activity.update(content) }
     }
@@ -874,7 +874,7 @@ final class ExperimentController: ObservableObject {
     private func makeState(_ np: NowPlaying?) -> ContentState {
         guard let np else {
             let t = CardText.noTrack(status: nowPlaying.status)
-            var empty = ContentState(previous: t.previous, current: t.current, next: t.next)
+            var empty = ContentState(previous: t.previous, current: t.current, next: t.next, trackInfo: t.trackInfo)
             applyQuotaNotice(&empty)
             return empty
         }
