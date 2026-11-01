@@ -63,15 +63,9 @@ nonisolated enum RemoteAuthPlan {
         hasRefreshToken && renewFailures < renewGiveUpAfter
     }
 
-    /// [Spotify 앱 연결] 버튼: Web API 로그인돼 있고 SDK 승인이 필요할 때만
+    /// [Spotify 다시 연결] 버튼 (작업 032): 로그인돼 있고 세션 만료·갱신 포기로 승인이 필요할 때만
     static func showsAuthorizeButton(loggedIn: Bool, action: Action) -> Bool {
         loggedIn && action == .needAuthorize
-    }
-
-    /// [Spotify 앱 연결 해제] 버튼: SDK 승인 세션이 있을 때만 (Web API 로그인과 무관, 작업 031)
-    /// Web API 토큰 만료로 로그아웃돼도(invalid_grant) SDK 세션은 남을 수 있으므로 로그인 여부는 보지 않음
-    static func showsDisconnectButton(hasSession: Bool) -> Bool {
-        hasSession
     }
 }
 

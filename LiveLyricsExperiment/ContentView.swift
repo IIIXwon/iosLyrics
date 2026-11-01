@@ -1,26 +1,22 @@
 // 앱 타깃 — 메인 화면: 준비 상태, Spotify 로그인, 싱크 보정, 시작/정지, 저장된 가사
 // 로그·조회 설정은 맨 아래 [개발자 메뉴]로 옮겼어요 (로그 기록은 계속 쌓음)
-import AuthenticationServices
 import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var controller: ExperimentController
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.webAuthenticationSession) private var webAuthenticationSession
 
     var body: some View {
         NavigationStack {
             Form {
                 ReadinessSection(model: controller.readiness) { fix in handle(fix) }
 
-                SpotifySection(auth: controller.auth, remote: controller.remote) {
-                    Task { await controller.login(using: webAuthenticationSession) }
+                SpotifySection(remote: controller.remote) {
+                    controller.login()
                 } onLogout: {
                     controller.logout()
                 } onAuthorizeRemote: {
                     controller.authorizeRemote()
-                } onDisconnectRemote: {
-                    controller.disconnectRemote()
                 }
 
                 Section {
@@ -32,7 +28,7 @@ struct ContentView: View {
                 }
 
                 StartStopSection(
-                    auth: controller.auth,
+                    remote: controller.remote,
                     readiness: controller.readiness,
                     isRunning: controller.isRunning,
                     onStart: { controller.start() },
@@ -91,7 +87,7 @@ private struct DeveloperMenuView: View {
                 IntervalPicker(service: controller.nowPlaying)
                     .disabled(controller.isRunning)
                 Button("한 번 조회해 보기") { controller.checkOnce() }
-                    .disabled(controller.isRunning || !controller.auth.isLoggedIn)
+                    .disabled(controller.isRunning || !controller.remote.isLoggedIn)
             }
 
             // 부모가 다시 그려질 때(로그 추가 등) 값을 새로 계산해 넘김 → 메뉴를 열어 둔 동안에도 숫자가 갱신됨
@@ -143,44 +139,26 @@ private struct DeveloperMenuView: View {
 // SpotifyButton(버튼 판단)은 Logic/AppButtons.swift로 옮김 (작업 024)
 
 private struct SpotifySection: View {
-    @ObservedObject var auth: SpotifyAuth
+    /// 로그인 = Spotify 앱 승인 세션 (작업 032)
     @ObservedObject var remote: SpotifyRemote
     let onLogin: () -> Void
     let onLogout: () -> Void
     let onAuthorizeRemote: () -> Void
-    let onDisconnectRemote: () -> Void
-
-    /// [Spotify 앱 연결 해제] 확인 창 표시 여부 (작업 031)
-    @State private var confirmingDisconnect = false
 
     var body: some View {
         Section("Spotify") {
             // 로그아웃 버튼이 보이면 로그인 상태라는 뜻이라 상태 줄은 따로 두지 않아요 (작업 018)
-            switch SpotifyButton.make(isLoggedIn: auth.isLoggedIn, isConfigured: SpotifyConfig.isConfigured) {
+            switch SpotifyButton.make(isLoggedIn: remote.isLoggedIn, isConfigured: SpotifyConfig.isConfigured) {
             case .logout:
                 Button("로그아웃", role: .destructive, action: onLogout)
             case .login(let enabled):
                 Button("Spotify로 로그인", action: onLogin)
                     .disabled(!enabled)
             }
-            // SDK 승인 세션이 있을 때만 보임 — Spotify 로그인은 유지 (작업 031)
-            if RemoteAuthPlan.showsDisconnectButton(hasSession: remote.hasSession) {
-                Button("Spotify 앱 연결 해제", role: .destructive) {
-                    confirmingDisconnect = true
-                }
-                .confirmationDialog("Spotify 앱 연결을 해제할까요?",
-                                    isPresented: $confirmingDisconnect,
-                                    titleVisibility: .visible) {
-                    Button("연결 해제", role: .destructive, action: onDisconnectRemote)
-                    Button("취소", role: .cancel) {}
-                } message: {
-                    Text("가사는 계속 표시돼요. 곡 변경 반영이 조금 느려질 수 있어요. 다시 쓰려면 [Spotify 앱 연결]을 누르세요.")
-                }
-            }
-            // Spotify 앱 승인(SDK 연결용)이 필요할 때만 보임 (작업 025 검토 2차)
-            if RemoteAuthPlan.showsAuthorizeButton(loggedIn: auth.isLoggedIn, action: remote.authAction) {
-                Button("Spotify 앱 연결", action: onAuthorizeRemote)
-                Text("곡 변경·일시정지를 더 빨리 알아채려면 Spotify 앱에서 한 번 승인해 주세요. 음악은 재생되지 않아요.")
+            // 세션 만료·갱신 포기로 다시 승인이 필요할 때만 보임 (작업 032)
+            if RemoteAuthPlan.showsAuthorizeButton(loggedIn: remote.isLoggedIn, action: remote.authAction) {
+                Button("Spotify 다시 연결", action: onAuthorizeRemote)
+                Text("Spotify 세션을 갱신하지 못했어요. 눌러서 Spotify 앱에서 다시 승인해 주세요. 음악은 재생되지 않아요.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -190,9 +168,9 @@ private struct SpotifySection: View {
 // MARK: - 시작/정지
 // StartButton(버튼 상태 판단)은 Logic/AppButtons.swift로 옮김 (작업 024)
 
-/// auth·readiness를 직접 관찰해서 로그인/로그아웃하자마자 [시작] 상태가 바뀌도록 따로 뺀 칸
+/// remote(로그인)·readiness를 직접 관찰해서 로그인/로그아웃하자마자 [시작] 상태가 바뀌도록 따로 뺀 칸
 private struct StartStopSection: View {
-    @ObservedObject var auth: SpotifyAuth
+    @ObservedObject var remote: SpotifyRemote
     @ObservedObject var readiness: ReadinessModel
     let isRunning: Bool
     let onStart: () -> Void
@@ -203,7 +181,7 @@ private struct StartStopSection: View {
             if isRunning {
                 Button("정지", role: .destructive, action: onStop)
             } else {
-                let start = StartButton.make(isLoggedIn: auth.isLoggedIn, hasProblem: readiness.hasProblem)
+                let start = StartButton.make(isLoggedIn: remote.isLoggedIn, hasProblem: readiness.hasProblem)
                 // 위치 권한 등 다른 항목이 ❌여도 막지는 않음 (시작할 때 필요한 것을 다시 확인함)
                 Button("시작", action: onStart)
                     .disabled(!start.enabled)

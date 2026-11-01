@@ -11,32 +11,38 @@ Spotify에서 재생 중인 곡의 **싱크 가사를 아이폰 잠금화면(Liv
 ## WHAT — 스택과 코드 지도
 
 - Swift / SwiftUI / ActivityKit(Live Activity) / WidgetKit / CoreLocation, **최소 iOS 16.4**
-- 외부: Spotify Web API (PKCE 로그인, 개발자 모드) · Spotify iOS SDK (SPM, 보조 출처, 025) · LRCLIB (가사 조회 전용)
+- 외부: Spotify Web API (개발자 모드, 토큰은 SDK 승인 세션 것, 032) · Spotify iOS SDK (SPM, 로그인 + 보조 출처, 025·032) · LRCLIB (가사 조회 전용)
 - 서버 없음. 외부 패키지는 SpotifyiOS(SPM) 하나. 가사·토큰은 기기 안에만 보관
+
+> 경로는 모두 **저장소 루트 기준**. `Spotify/`는 `LiveLyricsExperiment/` 안이 아니라 **루트에** 있다 (앱 타깃 소속). 파일은 이 경로로 바로 연다 — 경로를 짐작하거나 전체 목록을 훑지 말 것
 
 **앱 타깃 `LiveLyricsExperiment`**
 | 파일 | 하는 일 |
 |---|---|
-| `LiveLyricsExperimentApp.swift` | 진입점, `ExperimentController`를 environmentObject로 주입 |
-| `ContentView.swift` | 준비 상태, 로그인, 싱크 보정, 시작/정지, 저장된 가사, 개발자 메뉴(로그·조회 설정) |
-| `ExperimentController.swift` | 전체 조율: Live Activity 시작·갱신·종료, 로그 |
-| `Logic/` | **순수 로직(`swift test` 대상, `import Foundation`만)**. 아래 줄들 + `LrclibUsage`·`DailyUsage`·`SpotifyQuota`(호출 수), `PollTiming`, `SpotifyQueue`, `AppButtons`, `ReadinessRules`, `LogLimit` |
-| `Logic/LyricsService.swift` | LRCLIB 4단계 검색 + LRC 파싱 + 현재 줄 계산 + 앱 전용 저장 폴더(`LyricsStore`: `synced/`·`plain/`) |
-| `LocationKeepAlive.swift` | 백그라운드 유지용 저전력 위치 추적 |
-| `Spotify/SpotifyConfig.swift` | Client ID, Redirect URI `livelyrics://callback`, scopes |
-| `Spotify/SpotifyAuth.swift` | PKCE 로그인, 토큰 갱신, 키체인(`AfterFirstUnlock`) 저장 |
-| `Spotify/SpotifyAPI.swift` | currently-playing 조회, 401 재시도, 429 Retry-After |
+| `LiveLyricsExperiment/LiveLyricsExperimentApp.swift` | 진입점, `ExperimentController`를 environmentObject로 주입 |
+| `LiveLyricsExperiment/ContentView.swift` | 준비 상태, 로그인, 싱크 보정, 시작/정지, 저장된 가사, 개발자 메뉴(로그·조회 설정) |
+| `LiveLyricsExperiment/ExperimentController.swift` | 전체 조율: Live Activity 시작·갱신·종료, 로그 |
+| `LiveLyricsExperiment/ReadinessModel.swift` | 준비 상태 항목 모으기 (판단은 `Logic/ReadinessRules`) |
+| `LiveLyricsExperiment/StartTrackingIntent.swift` | 시작 App Intent |
+| `LiveLyricsExperiment/LocationKeepAlive.swift` | 백그라운드 유지용 저전력 위치 추적 |
+| `LiveLyricsExperiment/Logic/` | **순수 로직(`swift test` 대상, `import Foundation`만)**. `LyricsService`, `RemoteSync`(SDK 판단: `RemoteAuthPlan`·`CardTapPlan`), `LoginScopes`(로그인 권한 판단), `AppButtons`, `ReadinessRules`, `LrclibUsage`·`DailyUsage`·`SpotifyQuota`(호출 수), `PollTiming`, `SpotifyQueue`, `IdleNotice`, `LogLimit` |
+| `LiveLyricsExperiment/Logic/LyricsService.swift` | LRCLIB 4단계 검색 + LRC 파싱 + 현재 줄 계산 + 앱 전용 저장 폴더(`LyricsStore`: `synced/`·`plain/`) |
+| `Spotify/SpotifyConfig.swift` | Client ID(`Spotify/SpotifySecrets.swift`, 읽지 않음), Redirect URI `livelyrics://callback`, scopes |
+| `Spotify/Keychain.swift` | 키체인(`AfterFirstUnlock`) 저장·읽기·삭제 |
+| `Spotify/SpotifyAPI.swift` | currently-playing·대기열 조회(토큰은 `SpotifyRemote`), 401 재시도, 429 Retry-After |
 | `Spotify/NowPlayingService.swift` | 폴링(재생 중 3초·일시정지 15초·곡 없음 10초, SDK 연결 중 15·30초), 곡 변경·일시정지·seek 감지, 위치 추정, SDK 이벤트 반영 |
-| `Spotify/SpotifyRemote.swift` | Spotify iOS SDK(App Remote) **유일한 창구**: [Spotify 앱 연결] 승인 세션(키체인), 플레이어 상태 구독 — 감지 전용 (025) |
+| `Spotify/SpotifyRemote.swift` | Spotify iOS SDK(App Remote) **유일한 창구** + **로그인·토큰의 유일한 창구**(032): [Spotify로 로그인] = SDK 승인 세션(키체인), Web API 토큰 제공·갱신, 플레이어 상태 구독 — 감지 전용 |
 
 **위젯 확장 타깃 `LyricsWidgetExtension`**
 | 파일 | 하는 일 |
 |---|---|
-| `LyricsWidgetBundle.swift` | 위젯 진입점 |
-| `LyricsLiveActivity.swift` | 잠금화면 카드, 다이내믹 아일랜드 UI, `PlaybackTimeRow` |
+| `LyricsWidget/LyricsWidgetBundle.swift` | 위젯 진입점 |
+| `LyricsWidget/LyricsLiveActivity.swift` | 잠금화면 카드, 다이내믹 아일랜드 UI, `PlaybackTimeRow` |
 
 **두 타깃 공유** ⚠️ Target Membership 둘 다 체크
-- `LyricsActivityAttributes.swift` — 앱 ↔ 위젯 사이의 데이터 계약(`ContentState`)
+- `LyricsActivityAttributes.swift`(루트) — 앱 ↔ 위젯 사이의 데이터 계약(`ContentState`)
+
+**테스트** `LiveLyricsTests/<Suite>Tests.swift` · 패키지 `Package.swift`(루트)
 
 ## WHY — 각 부분이 존재하는 이유 (수정 범위 판단용)
 

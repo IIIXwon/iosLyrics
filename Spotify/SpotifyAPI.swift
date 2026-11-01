@@ -36,10 +36,11 @@ enum SpotifyAPIError: LocalizedError {
 
 @MainActor
 final class SpotifyAPI {
-    private let auth: SpotifyAuth
+    /// 토큰은 Spotify 앱 승인 세션 하나를 SDK와 함께 씀 (작업 032). SDK 타입은 이 파일에서 쓰지 않음
+    private let remote: SpotifyRemote
 
-    init(auth: SpotifyAuth) {
-        self.auth = auth
+    init(remote: SpotifyRemote) {
+        self.remote = remote
     }
 
     /// 현재 재생 중인 곡. 아무것도 재생 중이 아니면 nil
@@ -93,10 +94,13 @@ final class SpotifyAPI {
         return SpotifyQueue.next(from: data)
     }
 
-    /// GET 요청. 200 → 데이터, 204 → nil. 401이면 토큰 갱신 후 한 번 재시도
-    private func get(_ urlString: String, kind: APIUsage.Kind = .state, retry: Bool = true) async throws -> Data? {
+    /// GET 요청. 200 → 데이터, 204 → nil. 401이면 세션 갱신 후 한 번 재시도
+    /// - Parameter token: 재시도 때 갱신으로 받은 토큰 (없으면 지금 세션 토큰)
+    private func get(_ urlString: String, kind: APIUsage.Kind = .state, retry: Bool = true,
+                     token given: String? = nil) async throws -> Data? {
         try ensureNotBlocked()
-        let token = try await auth.validAccessToken()
+        let token: String
+        if let given { token = given } else { token = try await remote.webAPIToken() }
         var request = URLRequest(url: URL(string: urlString)!)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 10
@@ -112,8 +116,9 @@ final class SpotifyAPI {
         case 204:
             return nil
         case 401 where retry:
-            _ = try await auth.refresh()
-            return try await get(urlString, kind: kind, retry: false)
+            // 이 요청에 쓴 토큰을 넘김 → 그 사이 다른 쪽이 이미 갱신했으면 다시 갱신하지 않음 (리뷰 R6)
+            let renewed = try await remote.renewedWebAPIToken(rejected: token)
+            return try await get(urlString, kind: kind, retry: false, token: renewed)
         case 429:
             throw rateLimitError(http, data)
         default:
