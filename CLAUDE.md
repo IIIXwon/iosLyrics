@@ -105,6 +105,7 @@ Claude Code 메인 세션(리드)이 서브에이전트 `qa`, `ios-dev`를 불�
 ### 테스트 규칙
 - 단위 테스트(Swift Testing, 타깃 `LiveLyricsTests`)는 **`LiveLyricsExperiment/Logic/`의 순수 로직만**: LRC 파싱, 현재 줄 계산, 제목 정리·연주곡 제목 판단, 재검색 간격, 호출 수·한도 판단, 권한 판단 등
 - 기기 동작(잠금화면 카드, 백그라운드 유지, 카드 ▶︎·탭, 실제 Spotify 응답)은 **아이폰 확인**으로 본다. UI 테스트(XCUITest)는 쓰지 않는다
+- 아이폰 확인은 `swift test`로 확인할 수 없고 이번 diff가 건드린 경로만 요청한다. 항목 하나에 조작 하나, 기대 결과 하나, 기본 3개 이내. 회귀 확인 목록은 만들지 않는다 (034, 상세: `docs/plan/tasks/README.md`)
 - 이름은 한글 `행동_조건_결과`, 본문은 `// given // when // then`. 실제 네트워크·위치·키체인·UserDefaults 값은 쓰지 않는다
 - Red: 기존 함수는 assertion 실패여야 한다. 새 함수는 지시서에 시그니처가 있을 때만 "없는 이름" 컴파일 에러를 Red로 인정한다
 
