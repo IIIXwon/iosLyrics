@@ -184,4 +184,44 @@ struct LogLineTests {
         // then
         #expect(result == true)
     }
+
+    // 035-20
+    @Test func 수준_한도차단_error다() {
+        // given
+        let message = "⛔️ 한도 차단"
+        // when
+        let result = LogLine.level(of: message)
+        // then
+        #expect(result == .error)
+    }
+
+    // 035-21
+    @Test func 수준_SDK연결실패반복_warning이다() {
+        // given
+        let message = "⚡ SDK 연결 실패 #3: 같은 오류 반복"
+        // when
+        let result = LogLine.level(of: message)
+        // then
+        #expect(result == .warning)
+    }
+
+    // 035-22
+    @Test func 수준_SDK연결끊김_notice다() {
+        // given
+        let message = "⚡ SDK 연결 끊김 — 3초 폴링 복귀"
+        // when
+        let result = LogLine.level(of: message)
+        // then
+        #expect(result == .notice)
+    }
+
+    // 035-23
+    @Test func 수준_위치추적재시작실패_error다() {
+        // given
+        let message = "❌ 위치 추적 재시작 실패"
+        // when
+        let result = LogLine.level(of: message)
+        // then
+        #expect(result == .error)
+    }
 }
