@@ -298,7 +298,8 @@ final class NowPlayingService: ObservableObject {
 
         // SDK로 감지한 변화는 로그 앞에 ⚡ (작업 025)
         if trackChanged {
-            onLog?("\(logPrefix)🎵 곡: \(new.artist) - \(new.title) (\(Self.time(new.duration)))")
+            onLog?(LogLine.song(prefix: logPrefix, artist: new.artist, title: new.title,
+                                position: new.progress, duration: new.duration))
         } else if let old {
             if old.isPlaying != new.isPlaying {
                 onLog?(logPrefix + (new.isPlaying ? "▶️ 재생 (\(Self.time(new.progress)))" : "⏸ 일시정지 (\(Self.time(new.progress)))"))
@@ -324,7 +325,6 @@ final class NowPlayingService: ObservableObject {
     }
 
     static func time(_ seconds: TimeInterval) -> String {
-        let s = max(0, Int(seconds))
-        return String(format: "%d:%02d", s / 60, s % 60)
+        LogLine.time(seconds)
     }
 }
