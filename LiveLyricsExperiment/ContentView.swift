@@ -48,7 +48,10 @@ struct ContentView: View {
         .task { await controller.autoStartIfNeeded() }
         .onChange(of: scenePhase) { phase in
             switch phase {
-            case .background: controller.log("📱 백그라운드로 이동")
+            case .background:
+                controller.appLeftActive()
+                controller.log("📱 백그라운드로 이동")
+            case .inactive: controller.appLeftActive()
             case .active:
                 controller.log("📱 앱 화면으로 복귀")
                 controller.readiness.refresh()   // 설정 앱에서 바꾸고 돌아왔을 수 있어서 준비 상태를 다시 확인
