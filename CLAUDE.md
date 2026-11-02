@@ -25,7 +25,7 @@ Spotify에서 재생 중인 곡의 **싱크 가사를 아이폰 잠금화면(Liv
 | `LiveLyricsExperiment/ReadinessModel.swift` | 준비 상태 항목 모으기 (판단은 `Logic/ReadinessRules`) |
 | `LiveLyricsExperiment/StartTrackingIntent.swift` | 시작 App Intent |
 | `LiveLyricsExperiment/LocationKeepAlive.swift` | 백그라운드 유지용 저전력 위치 추적 |
-| `LiveLyricsExperiment/Logic/` | **순수 로직(`swift test` 대상, `import Foundation`만)**. `LyricsService`, `RemoteSync`(SDK 판단: `RemoteAuthPlan`·`CardTapPlan`), `LoginScopes`(로그인 권한 판단), `AppButtons`, `ReadinessRules`, `LrclibUsage`·`DailyUsage`·`SpotifyQuota`(호출 수), `PollTiming`, `SpotifyQueue`, `IdleNotice`, `LogLimit` |
+| `LiveLyricsExperiment/Logic/` | **순수 로직(`swift test` 대상, `import Foundation`만)**. `LyricsService`, `RemoteSync`(SDK 판단: `RemoteAuthPlan`·`CardTapPlan`), `CardPlan`(카드 갱신 판단·문구), `RemoteLog`(SDK 연결 로그 판단·문구), `LoginScopes`(로그인 권한 판단), `AppButtons`, `ReadinessRules`, `LrclibUsage`·`DailyUsage`·`SpotifyQuota`(호출 수), `PollTiming`, `SpotifyQueue`, `IdleNotice`, `LogLimit` |
 | `LiveLyricsExperiment/Logic/LyricsService.swift` | LRCLIB 4단계 검색 + LRC 파싱 + 현재 줄 계산 + 앱 전용 저장 폴더(`LyricsStore`: `synced/`·`plain/`) |
 | `Spotify/SpotifyConfig.swift` | Client ID(`Spotify/SpotifySecrets.swift`, 읽지 않음), Redirect URI `livelyrics://callback`, scopes |
 | `Spotify/Keychain.swift` | 키체인(`AfterFirstUnlock`) 저장·읽기·삭제 |

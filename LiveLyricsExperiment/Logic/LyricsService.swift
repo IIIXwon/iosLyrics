@@ -48,6 +48,21 @@ nonisolated struct SearchRecord: Codable, Equatable {
     var searchedAt: Date   // 마지막 검색 시각
     var summary: String    // 시도한 단계까지의 결과 요약
 
+    /// `result`에 저장되는 값. 기기에 이미 저장된 search-log.json을 읽어야 하므로 글자를 바꾸지 않음
+    static let plainResult = "plain"
+    static let noneResult = "none"
+    static let instrumentalResult = "instrumental"
+
+    /// 가사 종류 → 저장값 (싱크 가사는 기록하지 않으므로 쓰이지 않음)
+    static func resultName(for kind: LyricsKind) -> String {
+        switch kind {
+        case .plain: return plainResult
+        case .none: return noneResult
+        case .instrumental: return instrumentalResult
+        case .synced: return "synced"
+        }
+    }
+
     /// 마지막 검색이 maxAge초 안이면 true (재검색 간격 판단)
     func isFresh(within maxAge: TimeInterval) -> Bool {
         Date().timeIntervalSince(searchedAt) < maxAge
@@ -331,16 +346,15 @@ nonisolated enum LyricsStore {
         case .synced:
             log[key] = nil
         case .plain, .none, .instrumental:
-            let name = result.kind == .plain ? "plain" : (result.kind == .none ? "none" : "instrumental")
             log[key] = SearchRecord(key: key, title: title, artist: artist, album: album, duration: duration,
-                                    result: name, searchedAt: Date(), summary: result.summary)
+                                    result: SearchRecord.resultName(for: result.kind), searchedAt: Date(), summary: result.summary)
         }
         saveSearchLog(log)
     }
 
     /// "못 찾은 곡" 목록 (최근 검색한 순)
     static func notFoundRecords() -> [SearchRecord] {
-        loadSearchLog().values.filter { $0.result == "none" }.sorted { $0.searchedAt > $1.searchedAt }
+        loadSearchLog().values.filter { $0.result == SearchRecord.noneResult }.sorted { $0.searchedAt > $1.searchedAt }
     }
 
     // MARK: 삭제
