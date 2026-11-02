@@ -31,7 +31,7 @@ Spotify에서 재생 중인 곡의 **싱크 가사를 아이폰 잠금화면(Liv
 | `Spotify/Keychain.swift` | 키체인(`AfterFirstUnlock`) 저장·읽기·삭제 |
 | `Spotify/SpotifyAPI.swift` | currently-playing·대기열 조회(토큰은 `SpotifyRemote`), 401 재시도, 429 Retry-After |
 | `Spotify/NowPlayingService.swift` | 폴링(재생 중 3초·일시정지 15초·곡 없음 10초, SDK 연결 중 15·30초), 곡 변경·일시정지·seek 감지, 위치 추정, SDK 이벤트 반영 |
-| `Spotify/SpotifyRemote.swift` | Spotify iOS SDK(App Remote) **유일한 창구** + **로그인·토큰의 유일한 창구**(032): [Spotify로 로그인] = SDK 승인 세션(키체인), Web API 토큰 제공·갱신, 플레이어 상태 구독 — 감지 전용 |
+| `Spotify/SpotifyRemote.swift` | Spotify iOS SDK(App Remote) **유일한 창구** + **로그인·토큰의 유일한 창구**(032): [Spotify로 로그인] = SDK 승인 세션(키체인), Web API 토큰 제공·갱신, 플레이어 상태 구독 — 감지 전용 (예외: SDK가 끊겼을 때 카드 탭의 재생 동반 승인, 033) |
 
 **위젯 확장 타깃 `LyricsWidgetExtension`**
 | 파일 | 하는 일 |
