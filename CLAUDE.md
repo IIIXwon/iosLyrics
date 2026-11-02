@@ -25,7 +25,7 @@ Spotify에서 재생 중인 곡의 **싱크 가사를 아이폰 잠금화면(Liv
 | `LiveLyricsExperiment/ReadinessModel.swift` | 준비 상태 항목 모으기 (판단은 `Logic/ReadinessRules`) |
 | `LiveLyricsExperiment/StartTrackingIntent.swift` | 시작 App Intent |
 | `LiveLyricsExperiment/LocationKeepAlive.swift` | 백그라운드 유지용 저전력 위치 추적 |
-| `LiveLyricsExperiment/Logic/` | **순수 로직(`swift test` 대상, `import Foundation`만)**. `LyricsService`, `RemoteSync`(SDK 판단: `RemoteAuthPlan`·`CardTapPlan`), `CardPlan`(카드 갱신 판단·문구), `RemoteLog`(SDK 연결 로그 판단·문구), `LoginScopes`(로그인 권한 판단), `AppButtons`, `ReadinessRules`, `LrclibUsage`·`DailyUsage`·`SpotifyQuota`(호출 수), `PollTiming`, `SpotifyQueue`, `IdleNotice`, `LogLimit` |
+| `LiveLyricsExperiment/Logic/` | **순수 로직(`swift test` 대상, `import Foundation`만)**. `LyricsService`, `RemoteSync`(SDK 판단: `RemoteAuthPlan`·`CardTapPlan`), `CardPlan`(카드 갱신 판단·문구), `RemoteLog`(SDK 연결 로그 판단·문구), `LoginScopes`(로그인 권한 판단), `AppButtons`, `ReadinessRules`, `LrclibUsage`·`DailyUsage`·`SpotifyQuota`(호출 수), `PollTiming`, `SpotifyQueue`, `IdleNotice`, `LogLimit`, `LogLine`(로그 수준·분류·문구, `RepeatFilter`) |
 | `LiveLyricsExperiment/Logic/LyricsService.swift` | LRCLIB 4단계 검색 + LRC 파싱 + 현재 줄 계산 + 앱 전용 저장 폴더(`LyricsStore`: `synced/`·`plain/`) |
 | `Spotify/SpotifyConfig.swift` | Client ID(`Spotify/SpotifySecrets.swift`, 읽지 않음), Redirect URI `livelyrics://callback`, scopes |
 | `Spotify/Keychain.swift` | 키체인(`AfterFirstUnlock`) 저장·읽기·삭제 |
@@ -100,7 +100,7 @@ Claude Code 메인 세션(리드)이 서브에이전트 `qa`, `ios-dev`를 불�
 > 확정 (2026-10-27, 011): 시뮬레이터는 `iPhone 18 Pro` (`iPhone 18`은 없음). 빌드 명령은 앱 스킴이라 위젯 확장도 함께 빌드된다.
 
 - **아이폰 실행·동작 확인은 사용자가** 실기기에서 한다. 테스트 통과 ≠ 동작 확인이므로 실기기에서 볼 항목을 알려 준다
-- 결과 확인: 사용자가 앱의 [전체 복사] 로그를 붙여 줌. 잠금 상태 확인은 Mac 콘솔 앱에서 `liveactivitiesd` 로그
+- 결과 확인: 사용자가 앱의 [전체 복사] 로그를 붙여 줌. 잠금 상태 확인은 Mac 콘솔 앱에서 `liveactivitiesd` 로그, 앱 로그도 콘솔 앱에서 문구로 검색 (`subsystem:` 입력은 필터링 안 됨, 035)
 
 ### 테스트 규칙
 - 단위 테스트(Swift Testing, 타깃 `LiveLyricsTests`)는 **`LiveLyricsExperiment/Logic/`의 순수 로직만**: LRC 파싱, 현재 줄 계산, 제목 정리·연주곡 제목 판단, 재검색 간격, 호출 수·한도 판단, 권한 판단 등
@@ -122,7 +122,7 @@ Claude Code 메인 세션(리드)이 서브에이전트 `qa`, `ios-dev`를 불�
 - 공유 struct는 `nonisolated struct` (Swift 6 기본 MainActor 격리 대응)
 - 파일 추가 시 같은 이름 중복 금지 ("already exists", "Invalid redeclaration" 경험)
 - 시간 계산은 `ProcessInfo.processInfo.systemUptime` 기준, 카드용 Date는 `Date() - position`
-- 로그는 `ExperimentController.log()`로, 이모지 접두어로 구분 (✅ ❌ ⚠️ 🎵 🪪 💓 📍 등)
+- 로그는 `ExperimentController.log()`로, 이모지 접두어로 구분 (✅ ❌ ⚠️ 🎵 🪪 💓 📍 등). `print` 금지 — `log()`가 시스템 로그(`os.Logger`)와 앱 안 100줄로 보냄 (035)
 
 ### 법적 규칙 (개인용 전제)
 - LRCLIB 가사는 **조회만**. 서버 저장·재배포·업로드 자동화 금지, 캐시는 기기 안에만
