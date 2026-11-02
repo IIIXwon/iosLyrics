@@ -5,11 +5,12 @@ nonisolated enum LogLine {
     enum Level: Equatable { case notice, warning, error }
     enum Category: String, Equatable { case sdk, location, card, app }
 
-    /// 맨 앞 글자로 판단: ❌ → error, ⚠️ → warning, 그 밖은 notice (중간의 ❌는 보지 않음)
+    /// 맨 앞 글자로 판단: ❌·⛔ → error, ⚠️ → warning, ⚡로 시작하고 "실패" 포함 → warning, 그 밖은 notice (중간의 ❌는 보지 않음)
     static func level(of message: String) -> Level {
         switch message.unicodeScalars.first?.value {
-        case 0x274C: return .error     // ❌
-        case 0x26A0: return .warning   // ⚠ (뒤의 U+FE0F는 보지 않음)
+        case 0x274C, 0x26D4: return .error   // ❌, ⛔ (뒤의 U+FE0F는 보지 않음)
+        case 0x26A0: return .warning         // ⚠
+        case 0x26A1: return message.contains("실패") ? .warning : .notice   // ⚡ SDK 줄 중 실패
         default: return .notice
         }
     }

@@ -11,6 +11,7 @@ final class LocationKeepAlive: NSObject {
     private let manager = CLLocationManager()
     private(set) var isRunning = false
     private(set) var receivedCount = 0   // start() 이후 받은 위치 횟수 (재시작이 실제로 됐는지 확인용)
+    private(set) var startCount = 0   // start() 성공 횟수 (5초 뒤 확인이 옛 시작의 것인지 가려내기, 035)
     private var authorizationFilter = RepeatFilter()   // 권한이 실제로 바뀐 때만 로그 (작업 035)
     var onLog: (@MainActor (String) -> Void)?
     /// 위치 권한이 바뀌었을 때 (준비 상태 화면 갱신용)
@@ -56,6 +57,7 @@ final class LocationKeepAlive: NSObject {
         manager.showsBackgroundLocationIndicator = manager.authorizationStatus != .authorizedAlways
         manager.startUpdatingLocation()
         receivedCount = 0
+        startCount += 1
         isRunning = true
         onLog?("📍 위치 추적 시작 — 저전력 (권한: \(statusText(manager.authorizationStatus)))")
         return true

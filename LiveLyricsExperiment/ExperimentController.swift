@@ -20,6 +20,12 @@ private extension LyricsActivityAttributes.ContentState {
     }
 }
 
+/// 화면 로그 한 줄. id는 줄마다 고정이라 새 줄이 앞에 붙어도 기존 행이 그대로 유지됨 (작업 035)
+nonisolated struct LogRow: Identifiable {
+    let id: Int
+    let text: String
+}
+
 @MainActor
 final class ExperimentController: ObservableObject {
     @Published private(set) var isRunning = false
@@ -70,6 +76,7 @@ final class ExperimentController: ObservableObject {
     private var autoStartFilter = RepeatFilter()
     private var cardStateFilter = RepeatFilter()
     private var sceneFilter = RepeatFilter()
+    private var logSerial = 0   // 지금까지 남긴 줄 수 (LogRow 번호용)
 
     // 3단계: 현재 곡의 싱크 가사 (없으면 빈 배열)
     private var lyrics: [LyricLine] = []          // 싱크 가사일 때만 채워짐
@@ -335,9 +342,11 @@ final class ExperimentController: ObservableObject {
 
     /// 5초 뒤 위치 수신 여부를 로그로 남김. 수신 횟수·권한 문구는 5초 뒤 값을 읽음 (그래서 문구를 클로저로 받음)
     private func logLocationReceiptAfter5s(success: @escaping (Int) -> String, failure: @escaping (String) -> String) {
+        let startedAt = location.startCount
         Task {
             try? await Task.sleep(nanoseconds: 5_000_000_000)
-            guard location.isRunning else { return }   // 5초 사이 정지했으면 남기지 않음 (035)
+            // 5초 사이 정지했거나, 정지 뒤 다시 시작했으면 남기지 않음 (035)
+            guard location.isRunning, location.startCount == startedAt else { return }
             let count = location.receivedCount
             log(count > 0 ? success(count) : failure(location.authorizationText))
         }
@@ -1138,23 +1147,44 @@ final class ExperimentController: ObservableObject {
         log("💾 저장된 싱크 가사 사용 (\(saved.lines.count)줄)")
     }
 
-    /// 📱 화면 전환 줄: 같은 줄이 연속이면 한 번만 남김 (앱 복귀 처리는 호출한 쪽에서 그대로 실행)
+    /// 📱 백그라운드로 이동: 연속이면 한 번만 남김 (앱 처리는 호출한 쪽에서 그대로 실행)
     func logScene(_ message: String) {
         if sceneFilter.shouldLog(message) { log(message) }
     }
+
+    /// 📱 앱 화면으로 복귀: 항상 남기고 필터를 비움 (다음 백그라운드 줄은 다시 남음)
+    func logSceneReturn(_ message: String) {
+        sceneFilter.reset()
+        log(message)
+    }
+
+    /// 분류별 시스템 로거 (호출마다 만들지 않고 재사용)
+    private static let loggers: [LogLine.Category: Logger] = {
+        var result: [LogLine.Category: Logger] = [:]
+        for category in [LogLine.Category.sdk, .location, .card, .app] {
+            result[category] = Logger(subsystem: logSubsystem, category: category.rawValue)
+        }
+        return result
+    }()
 
     func log(_ message: String) {
         let time = Date().formatted(date: .omitted, time: .standard)
         let line = "\(time)  \(message)"
         // 시스템 로그: Mac 콘솔 앱에서 수준·분류별로 봄. 토큰·세션·callback 주소는 로그에 넣지 않음
-        let logger = Logger(subsystem: Self.logSubsystem, category: LogLine.category(of: message).rawValue)
+        let logger = Self.loggers[LogLine.category(of: message)] ?? Logger(subsystem: Self.logSubsystem, category: "app")
         switch LogLine.level(of: message) {
-        case .error: logger.error("\(message, privacy: .public)")
+        case .error: logger.fault("\(message, privacy: .public)")   // Logger.error는 warning과 같은 수준이라 fault로 구분
         case .warning: logger.warning("\(message, privacy: .public)")
         case .notice: logger.notice("\(message, privacy: .public)")
         }
+        logSerial += 1
         logs.insert(line, at: 0)
         if logs.count > LogLimit.maxLines { logs = LogLimit.trimmed(logs) }
+    }
+
+    /// 화면용 로그 행. 번호는 줄마다 한 번 정해지면 안 바뀜 (맨 앞 줄이 가장 큼)
+    var logRows: [LogRow] {
+        logs.enumerated().map { LogRow(id: logSerial - $0.offset, text: $0.element) }
     }
 
     var logText: String { logs.reversed().joined(separator: "\n") }
