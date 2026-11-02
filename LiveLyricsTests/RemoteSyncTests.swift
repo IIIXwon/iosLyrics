@@ -348,4 +348,103 @@ struct RemoteSyncTests {
         // then
         #expect(result == .openSpotify)
     }
+
+    // 033-1
+    @Test func 승인방식_세션이유효하면_재생과함께승인한다() {
+        // given // when
+        let result = CardTapPlan.authMethod(authAction: .connect)
+
+        // then
+        #expect(result == .playAndAuthorize)
+    }
+
+    // 033-2
+    @Test func 승인방식_갱신가능이면_재생과함께승인한다() {
+        // given // when
+        let result = CardTapPlan.authMethod(authAction: .renew)
+
+        // then
+        #expect(result == .playAndAuthorize)
+    }
+
+    // 033-3
+    @Test func 승인방식_승인필요면_세션승인을한다() {
+        // given // when
+        let result = CardTapPlan.authMethod(authAction: .needAuthorize)
+
+        // then
+        #expect(result == .sessionApproval)
+    }
+
+    // 033-4
+    @Test func 스포티파이복귀_대기중이고앱이화면에있으면_true() {
+        // given // when
+        let result = CardTapPlan.returnsToSpotify(pending: true, retryingAfterAttempt: false, appActive: true)
+
+        // then
+        #expect(result == true)
+    }
+
+    // 033-5
+    @Test func 스포티파이복귀_대기중이아니면_false() {
+        // given // when
+        let result = CardTapPlan.returnsToSpotify(pending: false, retryingAfterAttempt: false, appActive: true)
+
+        // then
+        #expect(result == false)
+    }
+
+    // 033-6
+    @Test func 스포티파이복귀_옛시도실패뒤재연결차례면_false() {
+        // given // when
+        let result = CardTapPlan.returnsToSpotify(pending: true, retryingAfterAttempt: true, appActive: true)
+
+        // then
+        #expect(result == false)
+    }
+
+    // 033-7
+    @Test func 스포티파이복귀_앱이화면에없으면_false() {
+        // given // when
+        let result = CardTapPlan.returnsToSpotify(pending: true, retryingAfterAttempt: false, appActive: false)
+
+        // then
+        #expect(result == false)
+    }
+
+    // 033-8
+    @Test func 재생승인콜백_토큰이있으면_token() {
+        // given // when
+        let result = PlayAuthCallback.result(hasParameters: true, token: "abc", errorDescription: nil)
+
+        // then
+        #expect(result == .token("abc"))
+    }
+
+    // 033-9
+    @Test func 재생승인콜백_오류설명이있으면_failed에설명을담는다() {
+        // given // when
+        let result = PlayAuthCallback.result(hasParameters: true, token: nil, errorDescription: "거부")
+
+        // then
+        #expect(result == .failed("거부"))
+    }
+
+    // 033-10
+    @Test func 재생승인콜백_토큰이비었으면_토큰없음으로실패한다() {
+        // given // when
+        let result = PlayAuthCallback.result(hasParameters: true, token: "", errorDescription: nil)
+
+        // then
+        #expect(result == .failed("토큰 없음"))
+    }
+
+    // 033-11
+    @Test func 재생승인콜백_파라미터가없으면_unrecognized() {
+        // given // when
+        let result = PlayAuthCallback.result(hasParameters: false, token: nil, errorDescription: nil)
+
+        // then
+        #expect(result == .unrecognized)
+    }
 }
