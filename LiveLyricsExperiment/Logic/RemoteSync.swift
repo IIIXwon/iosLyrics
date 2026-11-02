@@ -108,6 +108,15 @@ extension CardTapPlan {
     static func returnsToSpotify(pending: Bool, retryingAfterAttempt: Bool, appActive: Bool) -> Bool {
         pending && !retryingAfterAttempt && appActive
     }
+
+    /// 앱이 화면에 오기 전에 나온 결과를 이 시간(초) 안에 화면에 오면 처리 (작업 033 검토 1차)
+    static let returnWaitLimit: TimeInterval = 5
+
+    /// 결과가 나온 시각이 있고 returnWaitLimit 안이면 true
+    static func returnsWhenActive(readyAt: TimeInterval?, now: TimeInterval) -> Bool {
+        guard let readyAt else { return false }
+        return now - readyAt <= returnWaitLimit
+    }
 }
 
 /// 재생 승인(authorizeAndPlayURI) 뒤 돌아온 주소의 판단 (작업 033)

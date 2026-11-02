@@ -48,6 +48,8 @@ final class ExperimentController: ObservableObject {
     let remote: SpotifyRemote
     /// SDK 연결 시도·실패 진단 기록 (판단은 `Logic/RemoteLog`, 034). 추적 세션마다 새로 시작
     private var remoteLog = RemoteConnectLog()
+    private var returnReadyAt: TimeInterval?   // 결과가 앱이 화면에 오기 전에 나온 시각(systemUptime). 화면에 오면 5초 안일 때만 Spotify로 (033 검토 1차)
+    private var returnReadyLog = ""            // 위 경우에 남길 로그 문구
     private var returnToSpotify = false     // 카드 탭 재생 승인(033) 뒤 연결 결과가 나오면 Spotify로 돌아가기 위한 표시
 
     private typealias ContentState = LyricsActivityAttributes.ContentState
@@ -262,6 +264,7 @@ final class ExperimentController: ObservableObject {
         Task { await ending?.end(nil, dismissalPolicy: .immediate) }
         location.stop()
         remote.disconnect()
+        returnReadyAt = nil
         returnToSpotify = false   // 정지 뒤 다시 시작해 연결돼도 Spotify로 넘어가지 않게 (리뷰 1)
         remoteLog = RemoteConnectLog()   // 진단 기록만 초기화 (031 리뷰 R4)
         isRunning = false
@@ -935,6 +938,11 @@ final class ExperimentController: ObservableObject {
 
     /// 앱 화면으로 돌아왔을 때 (ContentView의 scenePhase .active). SDK 연결 시점 2
     func appBecameActive() {
+        // 재생 승인 결과가 화면에 오기 전에 나왔으면, 5초 안일 때만 Spotify로. 값은 결과와 상관없이 지움 (033 검토 1차)
+        let goBack = CardTapPlan.returnsWhenActive(readyAt: returnReadyAt, now: ProcessInfo.processInfo.systemUptime)
+        let backLog = returnReadyLog
+        returnReadyAt = nil
+        if goBack { openSpotifyForReturn(backLog) }
         // 연결 판단까지 갔으면 connect()가 버튼 표시(authAction)도 다시 계산함. 못 갔으면(추적 중 아님 등) 여기서만 다시 계산
         if !tryRemoteConnect(foreground: true) {
             remote.updateAuthAction()
@@ -984,8 +992,18 @@ final class ExperimentController: ObservableObject {
     /// 카드 탭 재생 승인이 실패함(승인 실패·알아보지 못한 주소·Spotify를 열지 못함) → 우리 앱에 머물지 않고 Spotify를 엶 (리뷰 4)
     private func playAuthFailed() {
         returnToSpotify = false
+        let text = "🔗 재생 승인 실패 — Spotify로 돌아감"
+        if UIApplication.shared.applicationState == .active {
+            openSpotifyForReturn(text)
+        } else {
+            returnReadyAt = ProcessInfo.processInfo.systemUptime
+            returnReadyLog = text
+        }
+    }
+
+    private func openSpotifyForReturn(_ text: String) {
         guard let url = URL(string: "spotify:") else { return }
-        log("🔗 재생 승인 실패 — Spotify로 돌아감")
+        log(text)
         UIApplication.shared.open(url)
     }
 
@@ -1039,12 +1057,16 @@ final class ExperimentController: ObservableObject {
 
     /// 카드 탭 재생 승인(033) 뒤 연결 결과가 나왔으면 Spotify로 돌아감. 표시는 이때 지움
     private func returnToSpotifyIfPending(retryingAfterAttempt: Bool) {
+        let active = UIApplication.shared.applicationState == .active
         let goBack = CardTapPlan.returnsToSpotify(pending: returnToSpotify, retryingAfterAttempt: retryingAfterAttempt,
-                                                  appActive: UIApplication.shared.applicationState == .active)
+                                                  appActive: active)
+        // 결과는 나왔는데 앱이 화면에 없으면 시각을 기억 → appBecameActive에서 처리. 옛 시도 실패 뒤 다시 연결할 차례면 기억 안 함
+        if returnToSpotify, !retryingAfterAttempt, !active {
+            returnReadyAt = ProcessInfo.processInfo.systemUptime
+            returnReadyLog = "🔗 SDK 연결 결과 나옴 — Spotify로 돌아감"
+        }
         if !retryingAfterAttempt { returnToSpotify = false }
-        guard goBack, let url = URL(string: "spotify:") else { return }
-        log("🔗 SDK 연결 결과 나옴 — Spotify로 돌아감")
-        UIApplication.shared.open(url)
+        if goBack { openSpotifyForReturn("🔗 SDK 연결 결과 나옴 — Spotify로 돌아감") }
     }
 
     /// 연결 실패 로그. 같은 실패(키 = `domain=… code=…`, 세션 갱신 단계는 앞에 "세션 갱신")가 연속이면 상세 대신 짧은 줄 (검토 2차)
