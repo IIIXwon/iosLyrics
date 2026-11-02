@@ -447,4 +447,46 @@ struct RemoteSyncTests {
         // then
         #expect(result == .unrecognized)
     }
+
+    // 033-12
+    @Test func 복귀대기_제한시간안이면_true() {
+        // given // when
+        let result = CardTapPlan.returnsWhenActive(readyAt: 100, now: 104)
+
+        // then
+        #expect(result == true)
+    }
+
+    // 033-13
+    @Test func 복귀대기_정확히제한시간이면_true() {
+        // given // when
+        let result = CardTapPlan.returnsWhenActive(readyAt: 100, now: 105)
+
+        // then
+        #expect(result == true)
+    }
+
+    // 033-14
+    @Test func 복귀대기_제한시간을넘기면_false() {
+        // given // when
+        let result = CardTapPlan.returnsWhenActive(readyAt: 100, now: 106)
+
+        // then
+        #expect(result == false)
+    }
+
+    // 033-15
+    @Test func 복귀대기_결과시각이없으면_false() {
+        // given // when
+        let result = CardTapPlan.returnsWhenActive(readyAt: nil, now: 104)
+
+        // then
+        #expect(result == false)
+    }
+
+    // 033-16
+    @Test func 상수_복귀대기제한이_5초다() {
+        // given // when // then
+        #expect(CardTapPlan.returnWaitLimit == 5)
+    }
 }
