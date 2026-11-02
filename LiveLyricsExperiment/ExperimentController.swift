@@ -9,6 +9,7 @@
 import ActivityKit
 import Combine
 import Foundation
+import os
 import SwiftUI
 import UIKit
 
@@ -17,6 +18,12 @@ private extension LyricsActivityAttributes.ContentState {
     var snapshot: CardSnapshot {
         CardSnapshot(previous: previous, current: current, next: next, isPlaying: isPlaying, countdown: countdown)
     }
+}
+
+/// 화면 로그 한 줄. id는 줄마다 고정이라 새 줄이 앞에 붙어도 기존 행이 그대로 유지됨 (작업 035)
+nonisolated struct LogRow: Identifiable {
+    let id: Int
+    let text: String
 }
 
 @MainActor
@@ -63,6 +70,13 @@ final class ExperimentController: ObservableObject {
 
     // 카드 상태 로그 (작업 019, 023 지연 측정에 씀)
     private var activityStateTask: Task<Void, Never>?               // 카드 상태 변화(activityStateUpdates) 구독
+
+    // 시스템 로그(os.Logger)와 반복 줄 걸러내기 (작업 035)
+    private static let logSubsystem = Bundle.main.bundleIdentifier ?? "LiveLyricsExperiment"
+    private var autoStartFilter = RepeatFilter()
+    private var cardStateFilter = RepeatFilter()
+    private var sceneFilter = RepeatFilter()
+    private var logSerial = 0   // 지금까지 남긴 줄 수 (LogRow 번호용)
 
     // 3단계: 현재 곡의 싱크 가사 (없으면 빈 배열)
     private var lyrics: [LyricLine] = []          // 싱크 가사일 때만 채워짐
@@ -216,6 +230,7 @@ final class ExperimentController: ObservableObject {
             log("⚠️ 위치 추적을 켜지 못했어요 — 권한: \(location.authorizationText)")
         }
 
+        autoStartFilter.reset()
         activityUpdates = 0
         skippedUpdates = 0
         lastSent = nil
@@ -251,6 +266,7 @@ final class ExperimentController: ObservableObject {
     }
 
     private func stopTracking() {
+        autoStartFilter.reset()
         quotaNoticeText = nil
         nowPlaying.stop()
         resetLyrics()
@@ -287,7 +303,8 @@ final class ExperimentController: ObservableObject {
         await readiness.refreshAndWait()
         guard !isRunning, !readiness.hasProblem else { return }
         if userStopped {
-            log("⏸ 자동 시작 안 함 — 사용자가 정지해 둠")
+            let message = "⏸ 자동 시작 안 함 — 사용자가 정지해 둠"
+            if autoStartFilter.shouldLog(message) { log(message) }
             return
         }
         log("🚀 자동 시작 (앱 열림)")
@@ -320,13 +337,16 @@ final class ExperimentController: ObservableObject {
         // 백그라운드에서 위치 추적이 실제로 켜졌는지 5초 뒤 확인
         logLocationReceiptAfter5s(
             success: { "⚡️ 단축어 실험: 위치 추적 켜짐 — 위치 수신 \($0)회" },
-            failure: { "⚡️ 단축어 실험: 5초 동안 위치 수신 0회 — 백그라운드에서 시작이 막혔을 수 있어요 (권한 \($0))" })
+            failure: { "⚡️ 단축어 실험: 5초 동안 위치 수신 0회 — \(LogLine.noFixNote(authorization: $0))" })
     }
 
     /// 5초 뒤 위치 수신 여부를 로그로 남김. 수신 횟수·권한 문구는 5초 뒤 값을 읽음 (그래서 문구를 클로저로 받음)
     private func logLocationReceiptAfter5s(success: @escaping (Int) -> String, failure: @escaping (String) -> String) {
+        let startedAt = location.startCount
         Task {
             try? await Task.sleep(nanoseconds: 5_000_000_000)
+            // 5초 사이 정지했거나, 정지 뒤 다시 시작했으면 남기지 않음 (035)
+            guard location.isRunning, location.startCount == startedAt else { return }
             let count = location.receivedCount
             log(count > 0 ? success(count) : failure(location.authorizationText))
         }
@@ -505,7 +525,7 @@ final class ExperimentController: ObservableObject {
         log("📍 위치 추적 재시작 요청 (앱 상태: \(appStateName()), 권한: \(location.authorizationText)) — 5초 뒤 수신 여부 확인")
         logLocationReceiptAfter5s(
             success: { "✅ 위치 추적 재시작 성공 — 위치 수신 \($0)회" },
-            failure: { "❌ 위치 추적 재시작 후 5초 동안 위치 수신 0회 — 백그라운드에서 시작이 막혔을 수 있어요 (권한 \($0))" })
+            failure: { "ℹ️ 위치 추적 재시작 후 5초 동안 위치 수신 0회 — \(LogLine.noFixNote(authorization: $0))" })
     }
 
     /// 앱 주소(livelyrics://…)로 앱이 열렸을 때. open-spotify = 잠금화면 카드 탭, callback = Spotify 앱 승인(로그인 포함, 작업 032) 후 돌아옴(작업 025 검토 2차)
@@ -519,7 +539,7 @@ final class ExperimentController: ObservableObject {
             log("⚡ Spotify 앱에서 돌아옴 — 승인 확인 중")
             if !remote.handleAuthCallback(url) { log("⚠️ Spotify 앱 승인 응답을 알아보지 못했어요") }
         } else {
-            log("ℹ️ 알 수 없는 앱 주소: \(url.absoluteString)")
+            log("ℹ️ 알 수 없는 앱 주소: \(url.host ?? "없음")")
         }
     }
 
@@ -875,13 +895,19 @@ final class ExperimentController: ObservableObject {
     /// 카드 상태 변화(활성·종료·사라짐 등)를 로그로 남김 — 시작 직후 iOS가 카드를 어떻게 다루는지 확인용 (작업 019)
     private func watchActivityState(_ activity: Activity<LyricsActivityAttributes>) {
         activityStateTask?.cancel()
-        log("🪪 카드 상태: \(activity.activityState)")
+        cardStateFilter.reset()   // 새 카드는 첫 상태를 남김
+        logCardState(activity.activityState)
         activityStateTask = Task { [weak self] in
             for await state in activity.activityStateUpdates {
                 guard !Task.isCancelled else { return }
-                self?.log("🪪 카드 상태: \(state)")
+                self?.logCardState(state)
             }
         }
+    }
+
+    private func logCardState(_ state: ActivityState) {
+        let message = "🪪 카드 상태: \(state)"
+        if cardStateFilter.shouldLog(message) { log(message) }
     }
 
     /// 지금 카드(lastSent)와 비교해 갱신해야 하는 이유. 필요 없으면 nil
@@ -1121,12 +1147,44 @@ final class ExperimentController: ObservableObject {
         log("💾 저장된 싱크 가사 사용 (\(saved.lines.count)줄)")
     }
 
+    /// 📱 백그라운드로 이동: 연속이면 한 번만 남김 (앱 처리는 호출한 쪽에서 그대로 실행)
+    func logScene(_ message: String) {
+        if sceneFilter.shouldLog(message) { log(message) }
+    }
+
+    /// 📱 앱 화면으로 복귀: 항상 남기고 필터를 비움 (다음 백그라운드 줄은 다시 남음)
+    func logSceneReturn(_ message: String) {
+        sceneFilter.reset()
+        log(message)
+    }
+
+    /// 분류별 시스템 로거 (호출마다 만들지 않고 재사용)
+    private static let loggers: [LogLine.Category: Logger] = {
+        var result: [LogLine.Category: Logger] = [:]
+        for category in [LogLine.Category.sdk, .location, .card, .app] {
+            result[category] = Logger(subsystem: logSubsystem, category: category.rawValue)
+        }
+        return result
+    }()
+
     func log(_ message: String) {
         let time = Date().formatted(date: .omitted, time: .standard)
         let line = "\(time)  \(message)"
-        print(line)
+        // 시스템 로그: Mac 콘솔 앱에서 수준·분류별로 봄. 토큰·세션·callback 주소는 로그에 넣지 않음
+        let logger = Self.loggers[LogLine.category(of: message)] ?? Logger(subsystem: Self.logSubsystem, category: "app")
+        switch LogLine.level(of: message) {
+        case .error: logger.fault("\(message, privacy: .public)")   // Logger.error는 warning과 같은 수준이라 fault로 구분
+        case .warning: logger.warning("\(message, privacy: .public)")
+        case .notice: logger.notice("\(message, privacy: .public)")
+        }
+        logSerial += 1
         logs.insert(line, at: 0)
         if logs.count > LogLimit.maxLines { logs = LogLimit.trimmed(logs) }
+    }
+
+    /// 화면용 로그 행. 번호는 줄마다 한 번 정해지면 안 바뀜 (맨 앞 줄이 가장 큼)
+    var logRows: [LogRow] {
+        logs.enumerated().map { LogRow(id: logSerial - $0.offset, text: $0.element) }
     }
 
     var logText: String { logs.reversed().joined(separator: "\n") }

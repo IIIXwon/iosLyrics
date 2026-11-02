@@ -11,12 +11,15 @@ final class LocationKeepAlive: NSObject {
     private let manager = CLLocationManager()
     private(set) var isRunning = false
     private(set) var receivedCount = 0   // start() 이후 받은 위치 횟수 (재시작이 실제로 됐는지 확인용)
+    private(set) var startCount = 0   // start() 성공 횟수 (5초 뒤 확인이 옛 시작의 것인지 가려내기, 035)
+    private var authorizationFilter = RepeatFilter()   // 권한이 실제로 바뀐 때만 로그 (작업 035)
     var onLog: (@MainActor (String) -> Void)?
     /// 위치 권한이 바뀌었을 때 (준비 상태 화면 갱신용)
     var onAuthorizationChange: (@MainActor () -> Void)?
 
     override init() {
         super.init()
+        _ = authorizationFilter.shouldLog(statusText(manager.authorizationStatus))   // 현재 권한을 먼저 기억
         manager.delegate = self
 
         // ① GPS를 쓰지 않는 가장 낮은 정확도 (기지국·와이파이 수준) → 가장 큰 절약 효과
@@ -54,6 +57,7 @@ final class LocationKeepAlive: NSObject {
         manager.showsBackgroundLocationIndicator = manager.authorizationStatus != .authorizedAlways
         manager.startUpdatingLocation()
         receivedCount = 0
+        startCount += 1
         isRunning = true
         onLog?("📍 위치 추적 시작 — 저전력 (권한: \(statusText(manager.authorizationStatus)))")
         return true
@@ -106,7 +110,10 @@ extension LocationKeepAlive: CLLocationManagerDelegate {
     nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         let status = manager.authorizationStatus
         Task { @MainActor in
-            self.onLog?("📍 위치 권한 변경: \(self.statusText(status))")
+            // 앱 시작 때마다 iOS가 콜백을 불러서, 실제로 바뀐 때만 로그 (작업 035)
+            if self.authorizationFilter.shouldLog(self.statusText(status)) {
+                self.onLog?("📍 위치 권한 변경: \(self.statusText(status))")
+            }
             self.onAuthorizationChange?()
             // 실행 중에 '항상'으로 바뀌면 파란 표시 즉시 숨김
             if self.isRunning {
